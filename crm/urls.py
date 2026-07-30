@@ -1,0 +1,31 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("health/", views.health, name="health"),
+    path("login/", views.AppLoginView.as_view(), name="login"),
+    path("logout/", views.AppLogoutView.as_view(), name="logout"),
+    path("", views.dashboard, name="dashboard"),
+    path("contacts/", views.contact_list, name="contact_list"),
+    path("contacts/new/", views.contact_create, name="contact_create"),
+    path("contacts/<uuid:pk>/", views.contact_detail, name="contact_detail"),
+    path("agents/", views.agent_list, name="agent_list"),
+    path("agents/new/", views.agent_create, name="agent_create"),
+    path("agents/<uuid:pk>/", views.agent_edit, name="agent_edit"),
+    path("knowledge/", views.knowledge_list, name="knowledge_list"),
+    path("knowledge/new/", views.knowledge_create, name="knowledge_create"),
+    path("inbox/", views.inbox, name="inbox"),
+    path("inbox/<uuid:pk>/", views.conversation_detail, name="conversation_detail"),
+    path("inbox/<uuid:pk>/<slug:action>/", views.conversation_action, name="conversation_action"),
+    path("pipelines/", views.pipeline_board, name="pipeline_board"),
+    path("campaigns/", views.campaign_list, name="campaign_list"),
+    path("campaigns/new/", views.campaign_create, name="campaign_create"),
+    path("campaigns/<uuid:pk>/", views.campaign_detail, name="campaign_detail"),
+    path("campaigns/<uuid:pk>/start/", views.campaign_start, name="campaign_start"),
+    path("integrations/", views.integration_list, name="integration_list"),
+    path("integrations/new/", views.integration_create, name="integration_create"),
+    path("integrations/<uuid:pk>/", views.integration_edit, name="integration_edit"),
+    path("switch-workspace/<uuid:tenant_id>/", views.switch_tenant, name="switch_tenant"),
+    path("webhooks/starsender/<str:token>/", views.starsender_webhook, name="starsender_webhook"),
+    path("webhooks/mailketing/<str:token>/", views.mailketing_webhook, name="mailketing_webhook"),
+]

@@ -1,0 +1,21 @@
+from django.contrib import admin
+from .models import *
+
+admin.site.register(Tenant)
+admin.site.register(Membership)
+admin.site.register(Brand)
+admin.site.register(Agent)
+admin.site.register(KnowledgeEntry)
+admin.site.register(Contact)
+admin.site.register(Pipeline)
+admin.site.register(PipelineStage)
+admin.site.register(Deal)
+admin.site.register(ChannelConnection)
+admin.site.register(Conversation)
+admin.site.register(Message)
+admin.site.register(Task)
+admin.site.register(WebhookEvent)
+admin.site.register(UsageRecord)
+admin.site.register(AuditLog)
+admin.site.register(Campaign)
+admin.site.register(CampaignRecipient)

@@ -1,0 +1,42 @@
+{% load static %}<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RizqHub AI CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'crm/app.css' %}">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <a class="brand-logo" href="{% url 'dashboard' %}"><span class="logo-mark">R</span><span>RizqHub AI</span></a>
+    <div class="workspace"><small>Workspace aktif</small><strong>{{ current_tenant.name|default:'Belum tersedia' }}</strong><div style="font-size:11px;color:#93a4bd;margin-top:3px">{{ current_membership.get_role_display }}</div></div>
+    <div class="nav">
+      <div class="nav-title">Operasional</div>
+      <a href="{% url 'dashboard' %}">◫ Dashboard</a>
+      <a href="{% url 'inbox' %}">✉ Unified Inbox {% if handoff_count %}<span class="badge badge-red">{{ handoff_count }}</span>{% endif %}</a>
+      <a href="{% url 'contact_list' %}">◎ Kontak CRM</a>
+      <a href="{% url 'pipeline_board' %}">▥ Sales Pipeline</a>
+      <div class="nav-title">AI & Marketing</div>
+      <a href="{% url 'agent_list' %}">✦ AI Agents</a>
+      <a href="{% url 'knowledge_list' %}">▤ Knowledge Base</a>
+      <a href="{% url 'campaign_list' %}">◉ Campaign</a>
+      <a href="{% url 'integration_list' %}">⌁ Integrasi</a>
+      <div class="nav-title">Platform</div>
+      <a href="/admin/">⚙ Admin Sistem</a>
+    </div>
+    <div class="sidebar-bottom">
+      <div style="font-size:12px;color:#93a4bd;padding:0 12px 8px">{{ request.user.email|default:request.user.username }}</div>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn" style="width:100%" type="submit">Keluar</button></form>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><h1>{% block topbar %}AI CRM & Marketing{% endblock %}</h1><div class="user-chip"><span class="muted">Asia/Jakarta</span><span class="avatar">{{ request.user.username|first|upper }}</span></div></header>
+    <div class="content">
+      {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-error{% else %}alert-success{% endif %}">{{ message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+</body>
+</html>
