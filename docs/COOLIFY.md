@@ -39,13 +39,25 @@ CSRF_TRUSTED_ORIGINS=https://crm.domainanda.com
 DJANGO_DEBUG=false
 ```
 
-Opsional AI:
+Opsional AI — Gemini:
 
 ```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=isi-api-key-google-ai-studio
+GEMINI_MODEL=gemini-2.5-flash
+AUTO_REPLY_DEFAULT=false
+```
+
+Alternatif OpenAI:
+
+```env
+AI_PROVIDER=openai
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-5-mini
 AUTO_REPLY_DEFAULT=false
 ```
+
+Gunakan `AI_PROVIDER=auto` untuk memilih Gemini otomatis bila key Gemini tersedia.
 
 Tuning VPS 4 core/8 GB:
 
@@ -127,7 +139,7 @@ Redeploy, login, lalu hapus variable tersebut.
 
 ### AI tidak menjawab
 
-- Pastikan `OPENAI_API_KEY` benar.
+- Pastikan `GEMINI_API_KEY` atau `OPENAI_API_KEY` benar dan `AI_PROVIDER` sesuai.
 - Buka agent playground untuk melihat error.
 - Pastikan knowledge entry aktif.
 - Pastikan percakapan sudah menekan **Aktifkan AI**.

@@ -140,9 +140,21 @@ Parser juga menerima format webhook dasar `message`, `from`, dan `timestamp`.
 
 ## Setup AI
 
-Masukkan pada environment Coolify:
+Aplikasi mendukung **Gemini** dan **OpenAI**. Untuk memakai Gemini, masukkan pada environment Coolify:
 
 ```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=isi-api-key-google-ai-studio
+GEMINI_MODEL=gemini-2.5-flash
+AUTO_REPLY_DEFAULT=false
+```
+
+Jangan menambahkan tanda kutip dan jangan mengunggah API key ke GitHub. Sebagai alternatif, gunakan `AI_PROVIDER=auto`; aplikasi akan memilih Gemini bila `GEMINI_API_KEY` tersedia, lalu menggunakan OpenAI bila hanya `OPENAI_API_KEY` yang tersedia.
+
+Konfigurasi OpenAI tetap didukung:
+
+```env
+AI_PROVIDER=openai
 OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-5-mini
 AUTO_REPLY_DEFAULT=false

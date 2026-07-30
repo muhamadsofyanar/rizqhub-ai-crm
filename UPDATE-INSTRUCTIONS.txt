@@ -1,0 +1,18 @@
+RIZQHUB AI CRM - UPDATE GEMINI
+
+File di folder ini harus menggantikan file dengan path yang sama di repository GitHub.
+Jangan upload file .env dan jangan masukkan GEMINI_API_KEY ke GitHub.
+
+Setelah commit masuk ke branch main, Coolify akan redeploy atau klik Deploy manual.
+Tambahkan Environment Variables di resource Docker Compose:
+
+AI_PROVIDER=gemini
+GEMINI_API_KEY=<API KEY ANDA>
+GEMINI_MODEL=gemini-2.5-flash
+AUTO_REPLY_DEFAULT=false
+
+Simpan API key sebagai Secret. Jangan hapus POSTGRES_PASSWORD, DJANGO_SECRET_KEY,
+APP_ENCRYPTION_KEY, atau konfigurasi yang sudah berjalan.
+
+Setelah deploy, uji melalui:
+AI Agent -> pilih agent -> Playground -> Jalankan tes.

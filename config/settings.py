@@ -89,6 +89,9 @@ CELERY_TASK_SOFT_TIME_LIMIT = 100
 
 APP_BASE_URL = env("APP_BASE_URL", default="http://localhost:8000")
 APP_ENCRYPTION_KEY = env("APP_ENCRYPTION_KEY", default="")
+AI_PROVIDER = env("AI_PROVIDER", default="auto").strip().lower()
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
+GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-2.5-flash")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-5-mini")
 AUTO_REPLY_DEFAULT = env.bool("AUTO_REPLY_DEFAULT", default=False)
