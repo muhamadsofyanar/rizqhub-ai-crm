@@ -14,15 +14,19 @@
     <div class="nav">
       <div class="nav-title">Operasional</div>
       <a href="{% url 'dashboard' %}">◫ Dashboard</a>
-      <a href="{% url 'inbox' %}">✉ Unified Inbox {% if handoff_count %}<span class="badge badge-red">{{ handoff_count }}</span>{% endif %}</a>
+      <a href="{% url 'inbox' %}">✉ Unified Inbox {% if unread_total %}<span class="badge">{{ unread_total }}</span>{% elif handoff_count %}<span class="badge badge-red">{{ handoff_count }}</span>{% endif %}</a>
       <a href="{% url 'contact_list' %}">◎ Kontak CRM</a>
       <a href="{% url 'pipeline_board' %}">▥ Sales Pipeline</a>
       <div class="nav-title">AI & Marketing</div>
       <a href="{% url 'agent_list' %}">✦ AI Agents</a>
       <a href="{% url 'knowledge_list' %}">▤ Knowledge Base</a>
-      <a href="{% url 'campaign_list' %}">◉ Campaign</a>
+      {% if feature_ai_evaluation %}<a href="{% url 'ai_evaluation' %}">✓ Evaluasi AI</a>{% endif %}
+      {% if feature_automation %}<a href="{% url 'automation_list' %}">⚡ Automation & n8n</a>{% endif %}
+      {% if feature_campaign %}<a href="{% url 'campaign_list' %}">◉ Campaign</a>{% endif %}
       <a href="{% url 'integration_list' %}">⌁ Integrasi</a>
       <div class="nav-title">Platform</div>
+      {% if feature_saas %}<a href="{% url 'workspace' %}">♙ Workspace & User</a>{% endif %}
+      <a href="{% url 'system_health' %}">♡ System Health</a>
       <a href="/admin/">⚙ Admin Sistem</a>
     </div>
     <div class="sidebar-bottom">
@@ -38,5 +42,6 @@
     </div>
   </main>
 </div>
+{% block scripts %}{% endblock %}
 </body>
 </html>

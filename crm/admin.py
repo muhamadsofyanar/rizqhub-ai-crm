@@ -1,21 +1,59 @@
 from django.contrib import admin
-from .models import *
 
-admin.site.register(Tenant)
-admin.site.register(Membership)
-admin.site.register(Brand)
-admin.site.register(Agent)
-admin.site.register(KnowledgeEntry)
-admin.site.register(Contact)
-admin.site.register(Pipeline)
-admin.site.register(PipelineStage)
-admin.site.register(Deal)
-admin.site.register(ChannelConnection)
-admin.site.register(Conversation)
-admin.site.register(Message)
-admin.site.register(Task)
-admin.site.register(WebhookEvent)
-admin.site.register(UsageRecord)
-admin.site.register(AuditLog)
-admin.site.register(Campaign)
-admin.site.register(CampaignRecipient)
+from .models import (
+    AIReview,
+    Agent,
+    AuditLog,
+    AutomationRule,
+    AutomationRun,
+    BackupRecord,
+    Brand,
+    Campaign,
+    CampaignRecipient,
+    ChannelConnection,
+    Contact,
+    Conversation,
+    Deal,
+    KnowledgeEntry,
+    KnowledgeRevision,
+    Membership,
+    Message,
+    Pipeline,
+    PipelineStage,
+    Subscription,
+    Task,
+    Tenant,
+    UsageRecord,
+    WebhookEvent,
+)
+
+for model in [
+    Tenant,
+    Membership,
+    Brand,
+    Agent,
+    KnowledgeEntry,
+    KnowledgeRevision,
+    Contact,
+    Pipeline,
+    PipelineStage,
+    Deal,
+    ChannelConnection,
+    Conversation,
+    Message,
+    Task,
+    WebhookEvent,
+    UsageRecord,
+    AuditLog,
+    Campaign,
+    CampaignRecipient,
+    AIReview,
+    AutomationRule,
+    AutomationRun,
+    Subscription,
+    BackupRecord,
+]:
+    try:
+        admin.site.register(model)
+    except admin.sites.AlreadyRegistered:
+        pass

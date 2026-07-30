@@ -1,0 +1,10 @@
+{% extends 'crm/base.html' %}{% block topbar %}Evaluasi AI{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Evaluasi kualitas AI</h2><p>Gunakan feedback admin untuk menemukan jawaban yang perlu diperbaiki dan knowledge yang kurang.</p></div><a class="btn" href="{% url 'agent_list' %}">Buka playground</a></div>
+<div class="grid grid-4">
+  <div class="card stat"><div class="stat-label">Jawaban AI</div><div class="stat-value">{{ metrics.total }}</div><div class="stat-foot">{{ metrics.reviewed }} sudah direview</div></div>
+  <div class="card stat"><div class="stat-label">Jawaban tepat</div><div class="stat-value metric-good">{{ metrics.helpful }}</div><div class="stat-foot">Disetujui admin</div></div>
+  <div class="card stat"><div class="stat-label">Perlu koreksi</div><div class="stat-value">{{ metrics.needs_edit }}</div><div class="stat-foot">Perlu update prompt/KB</div></div>
+  <div class="card stat"><div class="stat-label">Tidak aman</div><div class="stat-value metric-bad">{{ metrics.unsafe }}</div><div class="stat-foot">Prioritas investigasi</div></div>
+</div>
+<div class="card mt-2"><div class="card-head"><h3>Review terbaru</h3><span class="badge">{{ metrics.usage|floatformat:0 }} token tercatat</span></div><div class="table-wrap"><table class="table"><thead><tr><th>Percakapan</th><th>Verdict</th><th>Jawaban</th><th>Komentar</th><th>Reviewer</th></tr></thead><tbody>{% for r in reviews %}<tr><td><a href="{% url 'conversation_detail' r.message.conversation.id %}">{{ r.message.conversation.contact }}</a><br><small class="muted">{{ r.created_at|date:'d M H:i' }}</small></td><td><span class="badge {% if r.verdict == 'helpful' %}badge-green{% elif r.verdict == 'unsafe' %}badge-red{% else %}badge-yellow{% endif %}">{{ r.get_verdict_display }}</span></td><td>{{ r.message.body|truncatechars:180 }}</td><td>{{ r.comment|default:'—'|truncatechars:120 }}</td><td>{{ r.reviewer }}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Belum ada review. Gunakan tombol feedback pada balasan AI di Inbox.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

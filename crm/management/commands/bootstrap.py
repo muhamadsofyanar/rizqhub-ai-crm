@@ -2,7 +2,7 @@ import os
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
-from crm.models import Agent, Brand, KnowledgeEntry, Membership, Pipeline, PipelineStage, Tenant
+from crm.models import Agent, AutomationRule, Brand, KnowledgeEntry, Membership, Pipeline, PipelineStage, Subscription, Tenant
 
 
 AGENT_DATA = [
@@ -67,6 +67,19 @@ class Command(BaseCommand):
 
         tenant, _ = Tenant.objects.get_or_create(slug="rizqhub", defaults={"name": "RizqHub"})
         Membership.objects.get_or_create(tenant=tenant, user=user, defaults={"role": "owner"})
+        Subscription.objects.get_or_create(
+            tenant=tenant,
+            defaults={
+                "plan": "starter",
+                "status": "active",
+                "limits": {
+                    "users": 10,
+                    "brands": 5,
+                    "monthly_ai_tokens": 1000000,
+                    "monthly_campaign_recipients": 5000,
+                },
+            },
+        )
 
         for item in AGENT_DATA:
             brand, _ = Brand.objects.get_or_create(tenant=tenant, slug=item["slug"], defaults={"name": item["brand"], "description": item["description"]})
@@ -91,5 +104,19 @@ class Command(BaseCommand):
                 )
             for title, content in item["knowledge"]:
                 KnowledgeEntry.objects.get_or_create(tenant=tenant, agent=agent, title=title, defaults={"content": content, "category": "Starter"})
+            AutomationRule.objects.get_or_create(
+                tenant=tenant,
+                brand=brand,
+                name=f"Contoh follow-up 24 jam — {brand.name}",
+                defaults={
+                    "trigger": "no_reply",
+                    "action": "send_whatsapp",
+                    "config": {
+                        "minutes": 1440,
+                        "message": "Halo {{name}}, apakah masih membutuhkan bantuan dari tim kami?",
+                    },
+                    "is_active": False,
+                },
+            )
 
         self.stdout.write(self.style.SUCCESS(f"Bootstrap selesai. Login: {email}"))

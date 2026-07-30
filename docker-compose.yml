@@ -2,8 +2,7 @@ services:
   web:
     build: .
     restart: unless-stopped
-    environment:
-      SERVICE_MODE: web
+    environment: &app_environment
       DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
@@ -16,11 +15,24 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       AI_PROVIDER: ${AI_PROVIDER:-auto}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
       AUTO_REPLY_DEFAULT: ${AUTO_REPLY_DEFAULT:-false}
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-3}
+      FEATURE_LIVE_INBOX: ${FEATURE_LIVE_INBOX:-true}
+      FEATURE_MESSAGE_RETRY: ${FEATURE_MESSAGE_RETRY:-true}
+      FEATURE_AI_EVALUATION: ${FEATURE_AI_EVALUATION:-true}
+      FEATURE_AUTOMATION: ${FEATURE_AUTOMATION:-false}
+      FEATURE_CAMPAIGN: ${FEATURE_CAMPAIGN:-false}
+      FEATURE_SAAS: ${FEATURE_SAAS:-false}
+      FEATURE_BACKUP: ${FEATURE_BACKUP:-true}
+      LIVE_INBOX_POLL_SECONDS: ${LIVE_INBOX_POLL_SECONDS:-2.5}
+      CAMPAIGN_MAX_RECIPIENTS: ${CAMPAIGN_MAX_RECIPIENTS:-500}
+      WEBHOOK_RATE_LIMIT_PER_MINUTE: ${WEBHOOK_RATE_LIMIT_PER_MINUTE:-180}
+      BACKUP_DIR: /app/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_HOUR: ${BACKUP_HOUR:-2}
+      SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,6 +40,7 @@ services:
         condition: service_healthy
     volumes:
       - media_data:/app/media
+      - backup_data:/app/backups
     expose:
       - "8000"
     healthcheck:
@@ -40,21 +53,10 @@ services:
     build: .
     restart: unless-stopped
     environment:
+      <<: *app_environment
       SERVICE_MODE: worker
-      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-rizqhub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rizqhub}
-      REDIS_URL: redis://redis:6379/0
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
-      AI_PROVIDER: ${AI_PROVIDER:-auto}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
-      AUTO_REPLY_DEFAULT: ${AUTO_REPLY_DEFAULT:-false}
       CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
+      CELERY_LOG_LEVEL: ${CELERY_LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +64,22 @@ services:
         condition: service_healthy
     volumes:
       - media_data:/app/media
+      - backup_data:/app/backups
+
+  beat:
+    build: .
+    restart: unless-stopped
+    environment:
+      <<: *app_environment
+      SERVICE_MODE: beat
+      CELERY_LOG_LEVEL: ${CELERY_LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backup_data:/app/backups
 
   postgres:
     image: postgres:17-alpine
@@ -94,3 +112,4 @@ volumes:
   postgres_data:
   redis_data:
   media_data:
+  backup_data:

@@ -1,0 +1,18 @@
+{% extends 'crm/base.html' %}{% block topbar %}Automation & n8n{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Automation & n8n</h2><p>Aturan berbasis trigger untuk follow-up, tugas, tag, handoff, pipeline, dan webhook.</p></div><a class="btn btn-primary" href="{% url 'automation_create' %}">+ Buat automation</a></div>
+<div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Nama</th><th>Brand</th><th>Trigger</th><th>Action</th><th>Delay</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{% for r in rules %}<tr><td><strong>{{ r.name }}</strong><br><small class="muted">Terakhir: {{ r.last_run_at|date:'d M H:i'|default:'belum pernah' }}</small></td><td>{{ r.brand.name|default:'Semua brand' }}</td><td>{{ r.get_trigger_display }}</td><td>{{ r.get_action_display }}</td><td>{{ r.delay_minutes }} menit</td><td>{% if r.is_active %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge badge-gray">Nonaktif</span>{% endif %}</td><td><div class="flex gap"><a class="btn btn-sm" href="{% url 'automation_edit' r.id %}">Edit</a><form method="post" action="{% url 'automation_toggle' r.id %}">{% csrf_token %}<button class="btn btn-sm" type="submit">{% if r.is_active %}Nonaktifkan{% else %}Aktifkan{% endif %}</button></form></div></td></tr>{% empty %}<tr><td colspan="7" class="empty">Belum ada automation.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="grid grid-2 mt-2">
+  <div class="card card-pad"><h3 class="mt-0">Contoh konfigurasi</h3><div class="config-example">Tag kontak
+{"tag":"hot-lead"}
+
+Follow-up WhatsApp
+{"message":"Halo {{name}}, apakah masih membutuhkan bantuan?","minutes":1440}
+
+Tugas CS
+{"title":"Follow up {{name}}","due_minutes":60,"priority":"high"}
+
+Webhook n8n
+{"url":"https://n8n.example.com/webhook/rizqhub"}</div></div>
+  <div class="card"><div class="card-head"><h3>25 eksekusi terakhir</h3></div><div class="table-wrap"><table class="table"><thead><tr><th>Rule</th><th>Status</th><th>Waktu</th><th>Error</th></tr></thead><tbody>{% for run in recent_runs %}<tr><td>{{ run.rule.name }}</td><td><span class="badge {% if run.status == 'completed' %}badge-green{% elif run.status == 'failed' %}badge-red{% else %}badge-yellow{% endif %}">{{ run.get_status_display }}</span></td><td>{{ run.created_at|date:'d M H:i' }}</td><td><small>{{ run.error|truncatechars:80 }}</small></td></tr>{% empty %}<tr><td colspan="4" class="empty">Belum ada eksekusi.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}

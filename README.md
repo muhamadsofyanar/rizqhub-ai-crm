@@ -24,7 +24,7 @@ Setiap bisnis memiliki brand, AI agent, knowledge base, dan sales pipeline sendi
 - Sales pipeline per brand.
 - Integrasi Mailketing: credential, webhook event, dan pengiriman email.
 - Campaign WhatsApp/email berbasis consent, tag filter, personalization, throttling, dan status per penerima.
-- PostgreSQL, Redis, Celery, Gunicorn, WhiteNoise.
+- PostgreSQL, Redis, Celery worker + beat, Gunicorn, WhiteNoise.
 - Enkripsi credential provider.
 - Health check, persistent volume, bootstrap admin, serta data awal tiga bisnis.
 
@@ -58,6 +58,25 @@ Django + Gunicorn (web)
                          ├── Panggil OpenAI Responses API
                          └── Kirim balasan via StarSender
 ```
+
+
+## Aktivasi V3 yang disarankan
+
+Paket V3 memuat seluruh modul dalam satu source, tetapi modul berisiko dimatikan secara default. Mulai dengan konfigurasi berikut:
+
+```env
+FEATURE_LIVE_INBOX=true
+FEATURE_MESSAGE_RETRY=true
+FEATURE_AI_EVALUATION=true
+FEATURE_AUTOMATION=false
+FEATURE_CAMPAIGN=false
+FEATURE_SAAS=false
+FEATURE_BACKUP=true
+```
+
+Setelah inbox, handoff, knowledge base, dan retry pesan selesai diuji, aktifkan automation dan campaign satu per satu. Service `beat` diperlukan untuk campaign terjadwal, automation tanpa balasan, dan backup harian.
+
+> **Penting untuk upgrade instalasi yang sudah berjalan:** buat backup database terlebih dahulu. V3 menambahkan tabel baru secara additive melalui `migrate --run-syncdb`, tetapi deployment produksi tetap harus diuji dan dilakukan pada jam sepi.
 
 ## Menjalankan lokal
 
@@ -145,7 +164,7 @@ Aplikasi mendukung **Gemini** dan **OpenAI**. Untuk memakai Gemini, masukkan pad
 ```env
 AI_PROVIDER=gemini
 GEMINI_API_KEY=isi-api-key-google-ai-studio
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 AUTO_REPLY_DEFAULT=false
 ```
 

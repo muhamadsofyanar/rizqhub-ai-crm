@@ -1,1 +1,231 @@
-{% extends 'crm/base.html' %}{% block topbar %}Unified Inbox{% endblock %}{% block content %}<div class="card two-panel"><div class="conversation-list">{% for c in conversations %}<a class="conversation-item {% if c.id == selected.id %}active{% endif %}" href="{% url 'conversation_detail' c.id %}"><div class="conversation-name"><span>{{ c.contact|truncatechars:24 }}</span><small class="muted">{{ c.last_message_at|date:'H:i' }}</small></div><div class="conversation-preview">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }}</div>{% if c.needs_handoff %}<span class="badge badge-red mt-2">Handoff</span>{% elif c.ai_enabled %}<span class="badge badge-green mt-2">AI aktif</span>{% endif %}</a>{% endfor %}</div><section class="chat"><div class="chat-head"><div><strong>{{ conversation.contact }}</strong><br><small class="muted">{{ conversation.contact.phone }} · {{ conversation.brand.name }} · {{ conversation.agent.name|default:'Tanpa agent' }}</small>{% if conversation.handoff_reason %}<div><span class="badge badge-red mt-2">{{ conversation.handoff_reason }}</span></div>{% endif %}</div><div class="flex gap"><form method="post" action="{% url 'conversation_action' conversation.id 'takeover' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Ambil alih</button></form>{% if conversation.agent %}<form method="post" action="{% url 'conversation_action' conversation.id 'enable-ai' %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Aktifkan AI</button></form>{% endif %}<form method="post" action="{% url 'conversation_action' conversation.id 'close' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Tutup</button></form></div></div><div class="chat-body">{% for m in conversation_messages %}<div class="bubble-row {{ m.direction }}"><div class="bubble">{{ m.body }}{% if m.attachment_url %}<div><a target="_blank" href="{{ m.attachment_url }}">Buka lampiran</a></div>{% endif %}<div class="bubble-meta">{{ m.sender_type }} · {{ m.created_at|date:'d M H:i' }} · {{ m.status }}</div></div></div>{% empty %}<div class="empty">Belum ada pesan.</div>{% endfor %}</div><div class="chat-compose"><form method="post">{% csrf_token %}{{ reply_form.body }}<button class="btn btn-primary" type="submit">Kirim</button></form></div></section></div>{% endblock %}
+{% extends 'crm/base.html' %}
+{% block topbar %}Unified Inbox{% endblock %}
+{% block content %}
+<div class="card two-panel">
+  <div class="conversation-list">
+    {% for c in conversations %}
+      <a class="conversation-item {% if c.id == selected.id %}active{% endif %}" href="{% url 'conversation_detail' c.id %}">
+        <div class="conversation-name"><span>{{ c.contact|truncatechars:24 }}</span><small class="muted">{{ c.last_message_at|date:'H:i' }}</small></div>
+        <div class="conversation-preview">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }}</div>
+        <div class="mt-2">
+          {% if c.needs_handoff %}<span class="badge badge-red">Handoff</span>{% elif c.ai_enabled %}<span class="badge badge-green">AI aktif</span>{% else %}<span class="badge badge-gray">Human</span>{% endif %}
+          {% if c.unread_count %}<span class="badge">{{ c.unread_count }} baru</span>{% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+  <section class="chat">
+    <div class="chat-head">
+      <div>
+        <strong>{{ conversation.contact }}</strong><br>
+        <small class="muted">{{ conversation.contact.phone }} · {{ conversation.brand.name }} · {{ conversation.agent.name|default:'Tanpa agent' }}</small>
+        <div class="mt-2 flex gap items-center">
+          {% if feature_live_inbox %}<span id="liveIndicator" class="badge badge-green"><span class="live-dot"></span> Live</span>{% endif %}
+          <span id="conversationState" class="badge {% if conversation.needs_handoff %}badge-red{% elif conversation.ai_enabled %}badge-green{% else %}badge-gray{% endif %}">
+            {% if conversation.needs_handoff %}Handoff{% elif conversation.ai_enabled %}AI aktif{% else %}Human{% endif %}
+          </span>
+          {% if conversation.handoff_reason %}<span id="handoffReason" class="badge badge-red">{{ conversation.handoff_reason }}</span>{% else %}<span id="handoffReason"></span>{% endif %}
+        </div>
+      </div>
+      <div class="flex gap wrap">
+        <form method="post" action="{% url 'conversation_action' conversation.id 'takeover' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Ambil alih</button></form>
+        {% if conversation.agent %}<form method="post" action="{% url 'conversation_action' conversation.id 'enable-ai' %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Aktifkan AI</button></form>{% endif %}
+        <form method="post" action="{% url 'conversation_action' conversation.id 'pending' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Pending</button></form>
+        {% if conversation.status == 'closed' %}<form method="post" action="{% url 'conversation_action' conversation.id 'reopen' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Buka lagi</button></form>{% else %}<form method="post" action="{% url 'conversation_action' conversation.id 'close' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Tutup</button></form>{% endif %}
+      </div>
+    </div>
+
+    <div id="chatBody" class="chat-body" data-api-url="{% url 'conversation_messages_api' conversation.id %}" data-poll-ms="{{ live_poll_ms }}">
+      {% for m in conversation_messages %}
+        <div class="bubble-row {{ m.direction }}" data-message-id="{{ m.id }}">
+          <div class="bubble">
+            <div class="bubble-text">{{ m.body }}</div>
+            {% if m.attachment_url %}<div><a target="_blank" rel="noopener" href="{{ m.attachment_url }}">Buka lampiran</a></div>{% endif %}
+            <div class="bubble-meta">{{ m.sender_type }} · {{ m.created_at|date:'d M H:i' }} · {{ m.status }}{% if m.ai_metadata.confidence %} · confidence {{ m.ai_metadata.confidence }}%{% endif %}</div>
+            <div class="message-actions">
+              {% if m.direction == 'outbound' and m.status == 'failed' %}<form method="post" action="{% url 'message_retry' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Kirim ulang</button></form>{% endif %}
+              {% if m.direction == 'internal' and m.sender_type == 'ai' and not m.ai_metadata.approved_message_id %}<form method="post" action="{% url 'message_approve' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Setujui & kirim</button></form>{% endif %}
+              {% if 'ai' in m.sender_type %}
+                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="helpful"><button class="btn btn-sm" type="submit">✓ Tepat</button></form>
+                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="needs_edit"><button class="btn btn-sm" type="submit">✎ Koreksi</button></form>
+                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="unsafe"><button class="btn btn-sm btn-danger" type="submit">! Tidak aman</button></form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}<div class="empty">Belum ada pesan.</div>{% endfor %}
+    </div>
+
+    <div class="chat-tools">
+      <details>
+        <summary>Penugasan & catatan internal</summary>
+        <div class="grid grid-2 mt-2">
+          <form method="post" action="{% url 'conversation_assign' conversation.id %}">{% csrf_token %}
+            <div class="form-row"><label>Ditangani oleh</label>{{ assignment_form.assigned_to }}</div>
+            <button class="btn btn-sm" type="submit">Simpan penugasan</button>
+          </form>
+          <form method="post" action="{% url 'conversation_note' conversation.id %}">{% csrf_token %}
+            <div class="form-row"><label>Catatan internal</label>{{ note_form.note }}</div>
+            <button class="btn btn-sm" type="submit">Tambah catatan</button>
+          </form>
+        </div>
+      </details>
+    </div>
+
+    <div class="chat-compose">
+      <form method="post">{% csrf_token %}{{ reply_form.body }}<button class="btn btn-primary" type="submit">Kirim</button></form>
+      <small class="muted">Mengirim manual otomatis menonaktifkan AI pada percakapan ini agar tidak terjadi balasan ganda.</small>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if feature_live_inbox %}
+<script>
+(() => {
+  const chat = document.getElementById('chatBody');
+  const indicator = document.getElementById('liveIndicator');
+  const stateBadge = document.getElementById('conversationState');
+  const handoffReason = document.getElementById('handoffReason');
+  const apiUrl = chat.dataset.apiUrl;
+  const basePoll = Number(chat.dataset.pollMs || 2500);
+  let lastSignature = '';
+  let timer = null;
+  let loading = false;
+  let lastCount = chat.querySelectorAll('[data-message-id]').length;
+
+  function csrfToken() {
+    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  async function postAction(url, data = {}) {
+    const body = new URLSearchParams(data);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/x-www-form-urlencoded'},
+      body,
+      credentials: 'same-origin'
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    await refresh(true);
+  }
+
+  function makeButton(label, className, handler) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = label;
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function renderMessage(message) {
+    const row = document.createElement('div');
+    row.className = `bubble-row ${message.direction}`;
+    row.dataset.messageId = message.id;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    const text = document.createElement('div');
+    text.className = 'bubble-text';
+    text.textContent = message.body || '';
+    bubble.appendChild(text);
+
+    if (message.attachment_url) {
+      const wrapper = document.createElement('div');
+      const link = document.createElement('a');
+      link.href = message.attachment_url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'Buka lampiran';
+      wrapper.appendChild(link);
+      bubble.appendChild(wrapper);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'bubble-meta';
+    meta.textContent = `${message.sender_type} · ${message.created_label} · ${message.status}` + (message.confidence ? ` · confidence ${message.confidence}%` : '');
+    bubble.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    if (message.can_retry) {
+      actions.appendChild(makeButton('Kirim ulang', 'btn btn-sm btn-danger', () => postAction(message.retry_url)));
+    }
+    if (message.can_approve) {
+      actions.appendChild(makeButton('Setujui & kirim', 'btn btn-sm btn-success', () => postAction(message.approve_url)));
+    }
+    if ((message.sender_type || '').includes('ai')) {
+      actions.appendChild(makeButton('✓ Tepat', 'btn btn-sm' + (message.review === 'helpful' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'helpful'})));
+      actions.appendChild(makeButton('✎ Koreksi', 'btn btn-sm' + (message.review === 'needs_edit' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'needs_edit'})));
+      actions.appendChild(makeButton('! Tidak aman', 'btn btn-sm btn-danger' + (message.review === 'unsafe' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'unsafe'})));
+    }
+    if (actions.childElementCount) bubble.appendChild(actions);
+    row.appendChild(bubble);
+    return row;
+  }
+
+  function updateConversationState(data) {
+    if (data.needs_handoff) {
+      stateBadge.className = 'badge badge-red';
+      stateBadge.textContent = 'Handoff';
+    } else if (data.ai_enabled) {
+      stateBadge.className = 'badge badge-green';
+      stateBadge.textContent = 'AI aktif';
+    } else {
+      stateBadge.className = 'badge badge-gray';
+      stateBadge.textContent = 'Human';
+    }
+    if (data.handoff_reason) {
+      handoffReason.className = 'badge badge-red';
+      handoffReason.textContent = data.handoff_reason;
+    } else {
+      handoffReason.className = '';
+      handoffReason.textContent = '';
+    }
+  }
+
+  async function refresh(force = false) {
+    if (loading) return;
+    loading = true;
+    const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 140;
+    try {
+      const response = await fetch(apiUrl, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      const signature = JSON.stringify(data.messages.map(m => [m.id, m.status, m.body, m.review, m.can_approve]));
+      if (force || signature !== lastSignature) {
+        chat.replaceChildren(...data.messages.map(renderMessage));
+        if (nearBottom || data.messages.length > lastCount) chat.scrollTop = chat.scrollHeight;
+        if (data.messages.length > lastCount && document.hidden) {
+          document.title = `(${data.messages.length - lastCount}) Pesan baru — RizqHub AI CRM`;
+        }
+        lastCount = data.messages.length;
+        lastSignature = signature;
+      }
+      updateConversationState(data.conversation);
+      indicator.className = 'badge badge-green';
+      indicator.innerHTML = '<span class="live-dot"></span> Live';
+    } catch (error) {
+      indicator.className = 'badge badge-red';
+      indicator.textContent = 'Terputus';
+    } finally {
+      loading = false;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, document.hidden ? Math.max(basePoll * 4, 10000) : basePoll);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      document.title = 'Unified Inbox — RizqHub AI CRM';
+      clearTimeout(timer);
+      refresh(true);
+    }
+  });
+  chat.scrollTop = chat.scrollHeight;
+  refresh(true);
+})();
+</script>
+{% endif %}
+{% endblock %}

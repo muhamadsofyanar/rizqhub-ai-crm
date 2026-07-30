@@ -1,4 +1,5 @@
 from django.urls import path
+
 from . import views
 
 urlpatterns = [
@@ -12,12 +13,26 @@ urlpatterns = [
     path("agents/", views.agent_list, name="agent_list"),
     path("agents/new/", views.agent_create, name="agent_create"),
     path("agents/<uuid:pk>/", views.agent_edit, name="agent_edit"),
+    path("ai-evaluation/", views.ai_evaluation, name="ai_evaluation"),
     path("knowledge/", views.knowledge_list, name="knowledge_list"),
     path("knowledge/new/", views.knowledge_create, name="knowledge_create"),
+    path("knowledge/<uuid:pk>/", views.knowledge_edit, name="knowledge_edit"),
+    path("knowledge/<uuid:pk>/toggle/", views.knowledge_toggle, name="knowledge_toggle"),
     path("inbox/", views.inbox, name="inbox"),
     path("inbox/<uuid:pk>/", views.conversation_detail, name="conversation_detail"),
+    path("inbox/<uuid:pk>/messages.json", views.conversation_messages_api, name="conversation_messages_api"),
+    path("inbox/<uuid:pk>/note/", views.conversation_note, name="conversation_note"),
+    path("inbox/<uuid:pk>/assign/", views.conversation_assign, name="conversation_assign"),
     path("inbox/<uuid:pk>/<slug:action>/", views.conversation_action, name="conversation_action"),
+    path("messages/<uuid:pk>/retry/", views.message_retry, name="message_retry"),
+    path("messages/<uuid:pk>/approve/", views.message_approve, name="message_approve"),
+    path("messages/<uuid:pk>/review/", views.message_review, name="message_review"),
     path("pipelines/", views.pipeline_board, name="pipeline_board"),
+    path("deals/<uuid:pk>/move/", views.deal_move, name="deal_move"),
+    path("automations/", views.automation_list, name="automation_list"),
+    path("automations/new/", views.automation_create, name="automation_create"),
+    path("automations/<uuid:pk>/", views.automation_edit, name="automation_edit"),
+    path("automations/<uuid:pk>/toggle/", views.automation_toggle, name="automation_toggle"),
     path("campaigns/", views.campaign_list, name="campaign_list"),
     path("campaigns/new/", views.campaign_create, name="campaign_create"),
     path("campaigns/<uuid:pk>/", views.campaign_detail, name="campaign_detail"),
@@ -25,6 +40,8 @@ urlpatterns = [
     path("integrations/", views.integration_list, name="integration_list"),
     path("integrations/new/", views.integration_create, name="integration_create"),
     path("integrations/<uuid:pk>/", views.integration_edit, name="integration_edit"),
+    path("workspace/", views.workspace, name="workspace"),
+    path("system-health/", views.system_health, name="system_health"),
     path("switch-workspace/<uuid:tenant_id>/", views.switch_tenant, name="switch_tenant"),
     path("webhooks/starsender/<str:token>/", views.starsender_webhook, name="starsender_webhook"),
     path("webhooks/mailketing/<str:token>/", views.mailketing_webhook, name="mailketing_webhook"),

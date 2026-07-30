@@ -329,3 +329,154 @@ class CampaignRecipient(TenantOwnedModel):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["campaign", "contact"], name="unique_campaign_contact")]
         ordering = ["created_at"]
+
+
+class KnowledgeRevision(TenantOwnedModel):
+    entry = models.ForeignKey(KnowledgeEntry, on_delete=models.CASCADE, related_name="revisions")
+    revision_number = models.PositiveIntegerField(default=1)
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=100, blank=True)
+    content = models.TextField()
+    source_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=True)
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ["-revision_number", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "revision_number"],
+                name="unique_knowledge_revision_number",
+            )
+        ]
+
+
+class AIReview(TenantOwnedModel):
+    VERDICT_CHOICES = [
+        ("helpful", "Jawaban tepat"),
+        ("needs_edit", "Perlu koreksi"),
+        ("unsafe", "Tidak aman"),
+    ]
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="reviews")
+    reviewer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    verdict = models.CharField(max_length=20, choices=VERDICT_CHOICES)
+    comment = models.TextField(blank=True)
+    corrected_response = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "reviewer"],
+                name="unique_message_reviewer",
+            )
+        ]
+
+
+class AutomationRule(TenantOwnedModel):
+    TRIGGER_CHOICES = [
+        ("new_contact", "Kontak baru"),
+        ("inbound_message", "Pesan masuk"),
+        ("handoff", "Handoff ke manusia"),
+        ("deal_stage", "Perubahan tahap deal"),
+        ("no_reply", "Tidak ada balasan"),
+        ("scheduled", "Terjadwal"),
+    ]
+    ACTION_CHOICES = [
+        ("tag_contact", "Tambahkan tag"),
+        ("create_task", "Buat tugas"),
+        ("send_whatsapp", "Kirim WhatsApp"),
+        ("call_webhook", "Panggil webhook / n8n"),
+        ("enable_ai", "Aktifkan AI"),
+        ("disable_ai", "Nonaktifkan AI"),
+        ("move_stage", "Pindahkan tahap deal"),
+    ]
+    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, null=True, blank=True, related_name="automation_rules")
+    name = models.CharField(max_length=180)
+    trigger = models.CharField(max_length=30, choices=TRIGGER_CHOICES)
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    config = models.JSONField(default=dict, blank=True)
+    delay_minutes = models.PositiveIntegerField(default=0)
+    cooldown_minutes = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["tenant", "trigger", "is_active"])]
+
+    def __str__(self):
+        return self.name
+
+
+class AutomationRun(TenantOwnedModel):
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("skipped", "Skipped"),
+    ]
+    rule = models.ForeignKey(AutomationRule, on_delete=models.CASCADE, related_name="runs")
+    contact = models.ForeignKey(Contact, on_delete=models.SET_NULL, null=True, blank=True)
+    conversation = models.ForeignKey(Conversation, on_delete=models.SET_NULL, null=True, blank=True)
+    deal = models.ForeignKey(Deal, on_delete=models.SET_NULL, null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
+    unique_key = models.CharField(max_length=250, null=True, blank=True)
+    trigger_payload = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    scheduled_for = models.DateTimeField(default=timezone.now)
+    executed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "rule", "unique_key"],
+                name="unique_automation_run_key",
+            )
+        ]
+        indexes = [models.Index(fields=["status", "scheduled_for"])]
+
+
+class Subscription(TenantOwnedModel):
+    PLAN_CHOICES = [
+        ("starter", "Starter"),
+        ("growth", "Growth"),
+        ("business", "Business"),
+        ("enterprise", "Enterprise"),
+    ]
+    STATUS_CHOICES = [
+        ("trial", "Trial"),
+        ("active", "Active"),
+        ("past_due", "Past due"),
+        ("suspended", "Suspended"),
+        ("cancelled", "Cancelled"),
+    ]
+    plan = models.CharField(max_length=30, choices=PLAN_CHOICES, default="starter")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="active")
+    starts_at = models.DateTimeField(default=timezone.now)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    limits = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class BackupRecord(TenantOwnedModel):
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="running")
+    filename = models.CharField(max_length=250, blank=True)
+    size_bytes = models.BigIntegerField(default=0)
+    checksum_sha256 = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
