@@ -1,18 +1,16 @@
-RIZQHUB AI CRM - UPDATE GEMINI
+FIX GEMINI 3.6 - INTERNAL THOUGHT / TRUNCATED REPLY
 
-File di folder ini harus menggantikan file dengan path yang sama di repository GitHub.
-Jangan upload file .env dan jangan masukkan GEMINI_API_KEY ke GitHub.
+1. Upload folder crm from this package to the root of the GitHub repository.
+2. Replace crm/services/ai.py when GitHub asks.
+3. Commit message: Fix Gemini thought leakage and truncated replies
+4. In Coolify, keep GEMINI_MODEL=gemini-3.6-flash.
+5. Redeploy the Docker Compose resource.
+6. Close the old test conversation in CRM, then send a new WhatsApp message.
 
-Setelah commit masuk ke branch main, Coolify akan redeploy atau klik Deploy manual.
-Tambahkan Environment Variables di resource Docker Compose:
-
-AI_PROVIDER=gemini
-GEMINI_API_KEY=<API KEY ANDA>
-GEMINI_MODEL=gemini-2.5-flash
-AUTO_REPLY_DEFAULT=false
-
-Simpan API key sebagai Secret. Jangan hapus POSTGRES_PASSWORD, DJANGO_SECRET_KEY,
-APP_ENCRYPTION_KEY, atau konfigurasi yang sudah berjalan.
-
-Setelah deploy, uji melalui:
-AI Agent -> pilih agent -> Playground -> Jalankan tes.
+This fix:
+- excludes Gemini parts marked thought=true;
+- disables thought summaries;
+- uses minimal thinking for customer-service chat;
+- removes the deprecated temperature parameter;
+- retries once if Gemini returns MAX_TOKENS;
+- refuses to send an incomplete reply.

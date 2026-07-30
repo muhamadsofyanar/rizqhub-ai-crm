@@ -51,10 +51,15 @@ def _extract_openai_text(data: dict[str, Any]) -> str:
 
 
 def _extract_gemini_text(data: dict[str, Any]) -> str:
+    """Return only the user-facing answer, never Gemini thought summaries."""
     texts: list[str] = []
     for candidate in data.get("candidates", []):
         content = candidate.get("content") or {}
         for part in content.get("parts", []):
+            # Gemini 3.x may return reasoning summaries as text parts marked
+            # with thought=true. Those are internal and must not be sent to users.
+            if part.get("thought") is True:
+                continue
             text = part.get("text")
             if text:
                 texts.append(str(text))
@@ -165,54 +170,81 @@ def _generate_with_gemini(instructions: str, user_input: str):
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent"
     )
-    payload = {
-        "system_instruction": {"parts": [{"text": instructions}]},
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": user_input}],
-            }
-        ],
-        "generationConfig": {
-            "maxOutputTokens": 500,
-            "temperature": 0.3,
-        },
-    }
+
+    # Gemini 3.x uses thinking by default. For short customer-service replies,
+    # minimal thinking prevents the reasoning budget from consuming the answer
+    # budget. Do not send deprecated sampling parameters such as temperature.
+    token_limits = (1200, 2400)
+    last_data: dict[str, Any] = {}
+
     with httpx.Client(timeout=90) as client:
-        response = client.post(
-            endpoint,
-            headers={
-                "x-goog-api-key": settings.GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-    if response.is_error:
-        raise RuntimeError(
-            f"Gemini HTTP {response.status_code}: {response.text[:800]}"
-        )
+        for max_tokens in token_limits:
+            payload = {
+                "system_instruction": {"parts": [{"text": instructions}]},
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": user_input}],
+                    }
+                ],
+                "generationConfig": {
+                    "maxOutputTokens": max_tokens,
+                    "thinkingConfig": {
+                        "thinkingLevel": "minimal",
+                        "includeThoughts": False,
+                    },
+                },
+            }
+            response = client.post(
+                endpoint,
+                headers={
+                    "x-goog-api-key": settings.GEMINI_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            if response.is_error:
+                raise RuntimeError(
+                    f"Gemini HTTP {response.status_code}: {response.text[:800]}"
+                )
 
-    data = response.json()
-    text = _extract_gemini_text(data)
-    if not text:
-        prompt_feedback = data.get("promptFeedback") or {}
-        block_reason = prompt_feedback.get("blockReason")
-        finish_reasons = [
-            candidate.get("finishReason")
-            for candidate in data.get("candidates", [])
-            if candidate.get("finishReason")
-        ]
-        detail = block_reason or ", ".join(finish_reasons) or "respons kosong"
-        raise RuntimeError(f"Gemini tidak mengembalikan teks: {detail}")
+            data = response.json()
+            last_data = data
+            finish_reasons = [
+                candidate.get("finishReason")
+                for candidate in data.get("candidates", [])
+                if candidate.get("finishReason")
+            ]
 
-    usage = data.get("usageMetadata") or {}
-    normalized_usage = {
-        "input_tokens": usage.get("promptTokenCount", 0) or 0,
-        "output_tokens": usage.get("candidatesTokenCount", 0) or 0,
-        "total_tokens": usage.get("totalTokenCount", 0) or 0,
-        "raw": usage,
-    }
-    return text, normalized_usage, data.get("responseId"), model
+            # Never send an incomplete response. Retry once with a larger budget.
+            if "MAX_TOKENS" in finish_reasons and max_tokens != token_limits[-1]:
+                continue
+
+            text = _extract_gemini_text(data)
+            if "MAX_TOKENS" in finish_reasons:
+                raise RuntimeError(
+                    "Jawaban Gemini terpotong karena batas token. "
+                    "Periksa panjang system prompt dan Knowledge Base."
+                )
+            if text:
+                usage = data.get("usageMetadata") or {}
+                normalized_usage = {
+                    "input_tokens": usage.get("promptTokenCount", 0) or 0,
+                    "output_tokens": usage.get("candidatesTokenCount", 0) or 0,
+                    "total_tokens": usage.get("totalTokenCount", 0) or 0,
+                    "raw": usage,
+                }
+                return text, normalized_usage, data.get("responseId"), model
+
+    prompt_feedback = last_data.get("promptFeedback") or {}
+    block_reason = prompt_feedback.get("blockReason")
+    finish_reasons = [
+        candidate.get("finishReason")
+        for candidate in last_data.get("candidates", [])
+        if candidate.get("finishReason")
+    ]
+    detail = block_reason or ", ".join(finish_reasons) or "respons kosong"
+    raise RuntimeError(f"Gemini tidak mengembalikan teks: {detail}")
 
 
 def generate_reply(conversation, inbound_text: str) -> tuple[str, dict]:
