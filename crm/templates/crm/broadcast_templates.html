@@ -1,6 +1,28 @@
-{% extends 'crm/base.html' %}{% block topbar %}Template Pesan{% endblock %}{% block topbar_subtitle %}Simpan template teks dan media tanpa batas aplikasi{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Template Pesan</h2><p>Template dapat dipakai kembali untuk personal, satu grup, atau multi-grup.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'broadcast_list' %}">Kembali ke Broadcast</a><a class="btn btn-primary" href="{% url 'broadcast_template_create' %}">+ Buat Template</a></div></div>
-<div class="card"><table><thead><tr><th>Nama</th><th>Kategori</th><th>Jenis</th><th>Media</th><th>Dipakai</th><th>Status</th><th></th></tr></thead><tbody>
-{% for item in templates %}<tr><td><strong>{{ item.name }}</strong><br><span class="muted">{{ item.body|truncatechars:90 }}</span></td><td>{{ item.category|default:'—' }}</td><td>{{ item.get_message_type_display }}</td><td>{% if item.media_file %}Upload{% elif item.media_url %}URL{% else %}—{% endif %}</td><td>{{ item.usage_count }}×</td><td>{% if item.is_active %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge">Nonaktif</span>{% endif %}</td><td><a class="btn btn-sm" href="{% url 'broadcast_template_edit' item.pk %}">Edit</a></td></tr>{% empty %}<tr><td colspan="7"><div class="empty-chat"><div><h3>Belum ada template</h3><p>Buat template pertama untuk mempercepat broadcast berikutnya.</p><a class="btn btn-primary" href="{% url 'broadcast_template_create' %}">Buat Template</a></div></div></td></tr>{% endfor %}
-</tbody></table></div>
+{% extends 'crm/base.html' %}
+{% block title %}Template Pesan — RizqHub AI{% endblock %}
+{% block topbar %}Template Pesan{% endblock %}
+{% block topbar_subtitle %}Simpan pesan promosi teks dan media untuk digunakan berulang{% endblock %}
+{% block help_title %}Template Pesan{% endblock %}
+{% block help_content %}<p>Template adalah isi pesan yang dapat dipilih saat membuat broadcast. Template tidak mengirim pesan sendiri.</p><p>Gunakan kategori agar mudah dicari. Template personal dapat memakai variabel <strong>&#123;&#123;name&#125;&#125;</strong>, <strong>&#123;&#123;phone&#125;&#125;</strong>, <strong>&#123;&#123;email&#125;&#125;</strong>, dan <strong>&#123;&#123;company&#125;&#125;</strong>.</p>{% endblock %}
+{% block content %}
+<div class="page-head"><div><a class="back-link" href="{% url 'broadcast_list' %}">← Promosi WhatsApp</a><h2 class="mt-2">Template Pesan</h2><p>Jumlah template tidak dibatasi. Susun berdasarkan tujuan, bukan berdasarkan nama agent.</p></div><a class="btn btn-primary" href="{% url 'broadcast_template_create' %}">+ Template Baru</a></div>
+
+<form method="get" class="card card-pad growth-filter-bar">
+  <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Cari nama atau isi template">
+  <select class="form-control" name="category"><option value="">Semua kategori</option>{% for category in categories %}<option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category }}</option>{% endfor %}</select>
+  <select class="form-control" name="type"><option value="">Teks & media</option><option value="text" {% if selected_type == 'text' %}selected{% endif %}>Teks</option><option value="media" {% if selected_type == 'media' %}selected{% endif %}>Media</option></select>
+  <button class="btn" type="submit">Tampilkan</button>
+</form>
+
+<div class="template-grid mt-2">
+{% for template in templates %}
+<article class="card template-card {% if not template.is_active %}template-inactive{% endif %}">
+  <div class="template-card-head"><div><span class="badge {% if template.message_type == 'media' %}badge-yellow{% else %}badge-gray{% endif %}">{{ template.get_message_type_display }}</span>{% if template.category %}<span class="template-category">{{ template.category }}</span>{% endif %}</div><span class="badge {% if template.is_active %}badge-green{% else %}badge-gray{% endif %}">{% if template.is_active %}Aktif{% else %}Draft{% endif %}</span></div>
+  <h3>{{ template.name }}</h3>
+  <div class="template-preview-text">{{ template.body|default:'(tanpa teks)'|truncatechars:260|linebreaksbr }}</div>
+  {% if template.media_file or template.media_url %}<div class="template-media-pill">📎 Media terlampir</div>{% endif %}
+  <div class="template-card-foot"><small>Dipakai {{ template.usage_count }} kali{% if template.last_used_at %} · terakhir {{ template.last_used_at|date:'d M Y' }}{% endif %}</small><div class="flex gap"><form method="post" action="{% url 'broadcast_template_duplicate' template.pk %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Salin</button></form><a class="btn btn-sm btn-primary" href="{% url 'broadcast_template_edit' template.pk %}">Edit</a></div></div>
+</article>
+{% empty %}<div class="card empty template-empty"><h3>Belum ada template</h3><p>Buat satu template teks dan satu template media untuk pengujian awal.</p><a class="btn btn-primary" href="{% url 'broadcast_template_create' %}">Buat Template</a></div>{% endfor %}
+</div>
 {% endblock %}

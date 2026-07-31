@@ -35,6 +35,7 @@ from .forms import (
     ContactForm,
     ConversationAssignmentForm,
     DealStageForm,
+    DealQuickUpdateForm,
     InternalNoteForm,
     StarSenderAccountForm,
     StarSenderDeviceForm,
@@ -895,10 +896,90 @@ def message_review(request, pk):
 
 @tenant_required
 def pipeline_board(request):
-    pipelines = Pipeline.objects.filter(tenant=request.tenant).prefetch_related(
-        "stages__deals__contact"
+    pipelines = list(
+        Pipeline.objects.filter(tenant=request.tenant)
+        .select_related("brand")
+        .order_by("brand__name", "name")
     )
-    return render(request, "crm/pipeline.html", {"pipelines": pipelines})
+    selected_id = (request.GET.get("pipeline") or "").strip()
+    selected_pipeline = next(
+        (pipeline for pipeline in pipelines if str(pipeline.id) == selected_id),
+        pipelines[0] if pipelines else None,
+    )
+    query = (request.GET.get("q") or "").strip()
+    stages = []
+    board_total = Decimal("0")
+    board_open = 0
+    board_won = 0
+    board_lost = 0
+    if selected_pipeline:
+        deals = Deal.objects.filter(
+            tenant=request.tenant,
+            pipeline=selected_pipeline,
+        ).select_related("contact", "owner", "stage")
+        if query:
+            deals = deals.filter(
+                Q(title__icontains=query)
+                | Q(contact__name__icontains=query)
+                | Q(contact__phone__icontains=query)
+                | Q(contact__company__icontains=query)
+            )
+        deals = list(deals.order_by("-updated_at"))
+        board_open = sum(1 for deal in deals if deal.status == "open")
+        board_won = sum(1 for deal in deals if deal.status == "won")
+        board_lost = sum(1 for deal in deals if deal.status == "lost")
+        board_total = sum((deal.value for deal in deals if deal.status == "open"), Decimal("0"))
+        for stage in selected_pipeline.stages.all():
+            stage.visible_deals = [deal for deal in deals if deal.stage_id == stage.id]
+            stage.visible_count = len(stage.visible_deals)
+            stage.visible_value = sum((deal.value for deal in stage.visible_deals), Decimal("0"))
+            stages.append(stage)
+    return render(
+        request,
+        "crm/pipeline.html",
+        {
+            "pipelines": pipelines,
+            "selected_pipeline": selected_pipeline,
+            "stages": stages,
+            "query": query,
+            "board_total": board_total,
+            "board_open": board_open,
+            "board_won": board_won,
+            "board_lost": board_lost,
+            "pipeline_users": User.objects.filter(
+                memberships__tenant=request.tenant, memberships__is_active=True
+            ).distinct().order_by("first_name", "username"),
+        },
+    )
+
+
+@roles_required("owner", "admin", "manager", "sales", "cs")
+@require_POST
+def deal_quick_update(request, pk):
+    deal = get_object_or_404(Deal, pk=pk, tenant=request.tenant)
+    form = DealQuickUpdateForm(request.POST, instance=deal, tenant=request.tenant)
+    if form.is_valid():
+        previous_status = deal.status
+        updated = form.save()
+        log_audit(
+            tenant=request.tenant,
+            action="deal.quick_update",
+            request=request,
+            obj=updated,
+            metadata={"previous_status": previous_status, "status": updated.status},
+        )
+        messages.success(request, f"Deal {updated.title} diperbarui.")
+    else:
+        error_text = "; ".join(
+            message for messages_list in form.errors.values() for message in messages_list
+        )
+        messages.error(request, error_text or "Data deal belum valid.")
+    pipeline_id = request.POST.get("pipeline") or str(deal.pipeline_id)
+    query = (request.POST.get("q") or "").strip()
+    target = f"{reverse('pipeline_board')}?pipeline={pipeline_id}"
+    if query:
+        target += f"&q={query}"
+    return redirect(target)
 
 
 @roles_required("owner", "admin", "manager", "sales", "cs")
@@ -926,7 +1007,8 @@ def deal_move(request, pk):
             obj=deal,
             metadata={"from": old_stage.name, "to": deal.stage.name},
         )
-    return redirect("pipeline_board")
+    pipeline_id = request.POST.get("pipeline") or str(deal.pipeline_id)
+    return redirect(f"{reverse('pipeline_board')}?pipeline={pipeline_id}")
 
 
 @tenant_required
@@ -1258,11 +1340,10 @@ def campaign_create(request):
         return redirect("campaign_detail", pk=campaign.pk)
     return render(
         request,
-        "crm/form.html",
+        "crm/campaign_form.html",
         {
             "form": form,
-            "title": "Buat campaign",
-            "subtitle": "Campaign hanya mengambil kontak yang memiliki consent marketing.",
+            "title": "Buat Campaign Email",
         },
     )
 
@@ -1543,12 +1624,64 @@ def whatsapp_group_list(request):
             | Q(external_group_id__icontains=query)
             | Q(category_links__category__name__icontains=query)
         ).distinct()
+    category_id = (request.GET.get("category") or "").strip()
+    if category_id:
+        groups = groups.filter(category_links__category_id=category_id).distinct()
     devices = StarSenderDevice.objects.filter(tenant=request.tenant).order_by("name", "phone_number")
+    categories = GroupCategory.objects.filter(tenant=request.tenant, is_active=True).order_by("name")
     return render(
         request,
         "crm/whatsapp_group_list.html",
-        {"groups": groups, "devices": devices, "selected_device": device_id, "query": query},
+        {
+            "groups": groups,
+            "devices": devices,
+            "categories": categories,
+            "selected_device": device_id,
+            "selected_category": category_id,
+            "query": query,
+        },
     )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def whatsapp_group_bulk_action(request):
+    group_ids = request.POST.getlist("groups")
+    groups = WhatsAppGroup.objects.filter(tenant=request.tenant, id__in=group_ids)
+    if not group_ids or not groups.exists():
+        messages.error(request, "Pilih minimal satu grup.")
+        return redirect("whatsapp_group_list")
+    action = (request.POST.get("action") or "").strip()
+    if action == "category":
+        category = get_object_or_404(
+            GroupCategory,
+            pk=request.POST.get("category"),
+            tenant=request.tenant,
+            is_active=True,
+        )
+        added = 0
+        for group in groups:
+            _, created = group.category_links.get_or_create(
+                tenant=request.tenant,
+                category=category,
+            )
+            added += int(created)
+        messages.success(request, f"Kategori {category.name} diterapkan. {added} relasi baru dibuat.")
+    elif action == "lock":
+        groups.update(is_locked=True, updated_at=timezone.now())
+        messages.success(request, f"{groups.count()} grup dikunci dari broadcast.")
+    elif action == "unlock":
+        groups.update(is_locked=False, updated_at=timezone.now())
+        messages.success(request, f"{groups.count()} grup diizinkan untuk dipilih kembali.")
+    elif action == "activate":
+        groups.update(is_active=True, updated_at=timezone.now())
+        messages.success(request, f"{groups.count()} grup diaktifkan.")
+    elif action == "deactivate":
+        groups.update(is_active=False, updated_at=timezone.now())
+        messages.success(request, f"{groups.count()} grup dinonaktifkan.")
+    else:
+        messages.error(request, "Aksi massal tidak dikenali.")
+    return redirect("whatsapp_group_list")
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1625,9 +1758,45 @@ def group_category_edit(request, pk):
 
 @roles_required("owner", "admin", "manager", "marketing")
 def group_preset_list(request):
+    query = (request.GET.get("q") or "").strip()
     presets = GroupPreset.objects.filter(tenant=request.tenant).select_related("brand", "category")
-    categories = GroupCategory.objects.filter(tenant=request.tenant)
-    return render(request, "crm/group_presets.html", {"presets": presets, "categories": categories})
+    categories = GroupCategory.objects.filter(tenant=request.tenant).annotate(
+        group_count=Count("group_links", distinct=True)
+    )
+    if query:
+        presets = presets.filter(
+            Q(name__icontains=query)
+            | Q(description__icontains=query)
+            | Q(category__name__icontains=query)
+            | Q(brand__name__icontains=query)
+        )
+        categories = categories.filter(Q(name__icontains=query) | Q(description__icontains=query))
+    presets = list(presets)
+    for preset in presets:
+        if preset.preset_type == "static":
+            resolved = WhatsAppGroup.objects.filter(
+                preset_links__preset=preset,
+                is_active=True,
+                is_locked=False,
+            ).select_related("device")
+        elif preset.category_id:
+            resolved = WhatsAppGroup.objects.filter(
+                tenant=request.tenant,
+                category_links__category=preset.category,
+                is_active=True,
+                is_locked=False,
+            ).select_related("device").distinct()
+            if preset.brand_id:
+                resolved = resolved.filter(device__brand=preset.brand)
+        else:
+            resolved = WhatsAppGroup.objects.none()
+        preset.resolved_count = resolved.count()
+        preset.preview_groups = list(resolved[:5])
+    return render(
+        request,
+        "crm/group_presets.html",
+        {"presets": presets, "categories": categories, "query": query},
+    )
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1649,6 +1818,35 @@ def group_preset_create(request):
         messages.success(request, "Preset grup dibuat.")
         return redirect("group_preset_list")
     return render(request, "crm/group_preset_form.html", {"form": form, "title": "Buat preset grup"})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def group_preset_duplicate(request, pk):
+    source = get_object_or_404(GroupPreset, pk=pk, tenant=request.tenant)
+    base_name = f"Salinan {source.name}"
+    name = base_name
+    counter = 2
+    while GroupPreset.objects.filter(tenant=request.tenant, name=name).exists():
+        name = f"{base_name} {counter}"
+        counter += 1
+    duplicate = GroupPreset.objects.create(
+        tenant=request.tenant,
+        name=name,
+        description=source.description,
+        preset_type=source.preset_type,
+        brand=source.brand,
+        category=source.category,
+        is_active=False,
+        created_by=request.user,
+    )
+    for member in source.members.select_related("group"):
+        GroupPresetMember.objects.create(
+            tenant=request.tenant, preset=duplicate, group=member.group
+        )
+    log_audit(tenant=request.tenant, action="group_preset.duplicate", request=request, obj=duplicate)
+    messages.success(request, "Preset diduplikat dalam kondisi nonaktif. Periksa lalu aktifkan saat sudah benar.")
+    return redirect("group_preset_edit", pk=duplicate.pk)
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1771,7 +1969,66 @@ def broadcast_template_media(request, token):
 @roles_required("owner", "admin", "manager", "marketing")
 def broadcast_template_list(request):
     templates = BroadcastTemplate.objects.filter(tenant=request.tenant)
-    return render(request, "crm/broadcast_templates.html", {"templates": templates})
+    query = (request.GET.get("q") or "").strip()
+    category = (request.GET.get("category") or "").strip()
+    message_type = (request.GET.get("type") or "").strip()
+    if query:
+        templates = templates.filter(Q(name__icontains=query) | Q(body__icontains=query))
+    if category:
+        templates = templates.filter(category=category)
+    if message_type in {"text", "media"}:
+        templates = templates.filter(message_type=message_type)
+    categories = list(
+        BroadcastTemplate.objects.filter(tenant=request.tenant)
+        .exclude(category="")
+        .values_list("category", flat=True)
+        .distinct()
+        .order_by("category")
+    )
+    return render(
+        request,
+        "crm/broadcast_templates.html",
+        {
+            "templates": templates,
+            "categories": categories,
+            "query": query,
+            "selected_category": category,
+            "selected_type": message_type,
+        },
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def broadcast_template_duplicate(request, pk):
+    source = get_object_or_404(BroadcastTemplate, pk=pk, tenant=request.tenant)
+    base_name = f"Salinan {source.name}"[:160]
+    name = base_name
+    counter = 2
+    while BroadcastTemplate.objects.filter(tenant=request.tenant, name=name).exists():
+        suffix = f" ({counter})"
+        name = f"{base_name[:180-len(suffix)]}{suffix}"
+        counter += 1
+    duplicate = BroadcastTemplate.objects.create(
+        tenant=request.tenant,
+        name=name,
+        category=source.category,
+        message_type=source.message_type,
+        body=source.body,
+        media_file=source.media_file,
+        media_url=source.media_url,
+        is_active=False,
+        created_by=request.user,
+    )
+    log_audit(
+        tenant=request.tenant,
+        action="broadcast_template.duplicate",
+        request=request,
+        obj=duplicate,
+        metadata={"source_id": str(source.id)},
+    )
+    messages.success(request, "Template disalin sebagai draft nonaktif. Periksa lalu aktifkan setelah benar.")
+    return redirect("broadcast_template_edit", pk=duplicate.pk)
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1868,13 +2125,64 @@ def starsender_sync_all_groups(request):
 
 @roles_required("owner", "admin", "manager", "marketing")
 def broadcast_list(request):
-    broadcasts = Broadcast.objects.filter(tenant=request.tenant).select_related("device", "preset")
-    return render(request, "crm/broadcast_list.html", {"broadcasts": broadcasts})
+    broadcasts = Broadcast.objects.filter(tenant=request.tenant).select_related(
+        "device", "preset", "created_by"
+    )
+    query = (request.GET.get("q") or "").strip()
+    target = (request.GET.get("target") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    if query:
+        broadcasts = broadcasts.filter(
+            Q(name__icontains=query)
+            | Q(body__icontains=query)
+            | Q(device__name__icontains=query)
+            | Q(preset__name__icontains=query)
+        )
+    if target in {"personal", "group"}:
+        broadcasts = broadcasts.filter(target_type=target)
+    valid_statuses = {choice[0] for choice in Broadcast.STATUS_CHOICES}
+    if status in valid_statuses:
+        broadcasts = broadcasts.filter(status=status)
+    all_broadcasts = Broadcast.objects.filter(tenant=request.tenant)
+    stats = {
+        "draft": all_broadcasts.filter(status="draft").count(),
+        "active": all_broadcasts.filter(status__in=["scheduled", "queued", "running"]).count(),
+        "completed": all_broadcasts.filter(status="completed").count(),
+        "failed": all_broadcasts.filter(status="failed").count(),
+        "sent": all_broadcasts.aggregate(total=Sum("sent_count"))["total"] or 0,
+    }
+    return render(
+        request,
+        "crm/broadcast_list.html",
+        {
+            "broadcasts": broadcasts[:300],
+            "stats": stats,
+            "query": query,
+            "selected_target": target,
+            "selected_status": status,
+            "device_count": StarSenderDevice.objects.filter(
+                tenant=request.tenant, send_enabled=True
+            ).count(),
+            "group_count": WhatsAppGroup.objects.filter(
+                tenant=request.tenant, is_active=True, is_locked=False
+            ).count(),
+            "template_count": BroadcastTemplate.objects.filter(
+                tenant=request.tenant, is_active=True
+            ).count(),
+            "preset_count": GroupPreset.objects.filter(
+                tenant=request.tenant, is_active=True
+            ).count(),
+        },
+    )
 
 
 @roles_required("owner", "admin", "manager", "marketing")
 def broadcast_create(request):
-    form = BroadcastForm(request.POST or None, tenant=request.tenant)
+    initial = {}
+    target_hint = (request.GET.get("target") or "").strip()
+    if target_hint in {"personal", "group"}:
+        initial["target_type"] = target_hint
+    form = BroadcastForm(request.POST or None, tenant=request.tenant, initial=initial)
     if request.method == "POST" and form.is_valid():
         broadcast = form.save(commit=False)
         broadcast.tenant = request.tenant
@@ -1998,17 +2306,74 @@ def broadcast_detail(request, pk):
         pk=pk,
         tenant=request.tenant,
     )
-    recipients = broadcast.recipients.select_related("contact", "group")[:1000]
+    recipients = broadcast.recipients.select_related("contact", "group")
+    query = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    valid_statuses = {choice[0] for choice in BroadcastRecipient.STATUS_CHOICES}
+    if query:
+        recipients = recipients.filter(
+            Q(display_name__icontains=query)
+            | Q(external_target__icontains=query)
+            | Q(error__icontains=query)
+        )
+    if status in valid_statuses:
+        recipients = recipients.filter(status=status)
+    status_counts = {
+        row["status"]: row["total"]
+        for row in broadcast.recipients.values("status").annotate(total=Count("id"))
+    }
+    processed = sum(
+        status_counts.get(key, 0)
+        for key in ("sent", "failed", "uncertain", "cancelled", "skipped")
+    )
+    progress_percent = int((processed / broadcast.total_count) * 100) if broadcast.total_count else 0
     feature_key = "group_broadcast" if broadcast.target_type == "group" else "personal_broadcast"
     return render(
         request,
         "crm/broadcast_detail.html",
         {
             "broadcast": broadcast,
-            "recipients": recipients,
+            "recipients": recipients[:1000],
             "feature_enabled": feature_enabled(request.tenant, feature_key, False),
             "feature_key": feature_key,
+            "status_counts": status_counts,
+            "progress_percent": progress_percent,
+            "query": query,
+            "selected_status": status,
         },
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_GET
+def broadcast_status_api(request, pk):
+    broadcast = get_object_or_404(Broadcast, pk=pk, tenant=request.tenant)
+    recipients = list(
+        broadcast.recipients.order_by("created_at").values(
+            "id", "status", "attempts", "sent_at", "error"
+        )[:1000]
+    )
+    status_counts = {
+        row["status"]: row["total"]
+        for row in broadcast.recipients.values("status").annotate(total=Count("id"))
+    }
+    processed = sum(
+        status_counts.get(key, 0)
+        for key in ("sent", "failed", "uncertain", "cancelled", "skipped")
+    )
+    progress = int((processed / broadcast.total_count) * 100) if broadcast.total_count else 0
+    return JsonResponse(
+        {
+            "status": broadcast.status,
+            "status_label": broadcast.get_status_display(),
+            "total_count": broadcast.total_count,
+            "sent_count": broadcast.sent_count,
+            "failed_count": broadcast.failed_count,
+            "skipped_count": broadcast.skipped_count,
+            "progress_percent": progress,
+            "status_counts": status_counts,
+            "recipients": recipients,
+        }
     )
 
 

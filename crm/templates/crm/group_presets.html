@@ -1,7 +1,26 @@
-{% extends 'crm/base.html' %}{% block topbar %}Kategori & Preset Grup{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Preset Grup</h2><p>Simpan pilihan grup statis atau aturan kategori dinamis.</p></div><div><a class="btn" href="{% url 'group_category_create' %}">Tambah kategori</a> <a class="btn btn-primary" href="{% url 'group_preset_create' %}">Buat preset</a></div></div>
-<div class="grid grid-2">
-<div class="card card-pad"><h3 class="mt-0">Kategori</h3>{% for category in categories %}<div class="list-row"><div><strong>{{ category.name }}</strong><br><span class="muted">{{ category.group_links.count }} grup · {% if category.is_active %}Aktif{% else %}Nonaktif{% endif %}</span></div><a class="btn" href="{% url 'group_category_edit' category.pk %}">Edit</a></div>{% empty %}<p>Belum ada kategori.</p>{% endfor %}</div>
-<div class="card card-pad"><h3 class="mt-0">Preset tersimpan</h3>{% for preset in presets %}<div class="list-row"><div><strong>{{ preset.name }}</strong><br><span class="muted">{{ preset.get_preset_type_display }}{% if preset.category %} · {{ preset.category.name }}{% endif %}</span></div><a class="btn" href="{% url 'group_preset_edit' preset.pk %}">Edit</a></div>{% empty %}<p>Belum ada preset.</p>{% endfor %}</div>
+{% extends 'crm/base.html' %}
+{% block title %}Audiens Grup — RizqHub AI{% endblock %}
+{% block topbar %}Audiens Grup{% endblock %}
+{% block topbar_subtitle %}Kelompokkan grup dengan kategori dan simpan pilihan sebagai preset{% endblock %}
+{% block help_title %}Kategori dan Preset{% endblock %}
+{% block help_content %}
+<p><strong>Kategori</strong> adalah label, misalnya “UMKM”, “Jawa Barat”, atau “Mitra”.</p>
+<p><strong>Preset statis</strong> menyimpan grup tertentu. <strong>Preset dinamis</strong> otomatis mengambil semua grup dalam satu kategori.</p>
+{% endblock %}
+{% block content %}
+<div class="page-head"><div><a class="back-link" href="{% url 'broadcast_list' %}">← Promosi WhatsApp</a><h2 class="mt-2">Audiens Grup</h2><p>Gunakan kategori untuk menata grup. Gunakan preset untuk memilih banyak grup dengan satu klik saat membuat broadcast.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'whatsapp_group_list' %}">Kelola Grup</a><a class="btn" href="{% url 'group_category_create' %}">+ Kategori</a><a class="btn btn-primary" href="{% url 'group_preset_create' %}">+ Preset</a></div></div>
+
+<form method="get" class="card card-pad audience-search"><input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Cari kategori, preset, brand, atau deskripsi"><button class="btn" type="submit">Cari</button></form>
+
+<section class="audience-explainer mt-2"><div><span>1</span><strong>Sinkronkan grup</strong><small>Grup dibaca dari setiap device.</small></div><div><span>2</span><strong>Beri kategori</strong><small>Label dapat dipakai oleh banyak grup.</small></div><div><span>3</span><strong>Buat preset</strong><small>Simpan audiens yang sering digunakan.</small></div><div><span>4</span><strong>Pilih saat broadcast</strong><small>Semua anggota tetap ditinjau sebelum kirim.</small></div></section>
+
+<div class="grid grid-2 mt-2">
+  <section class="card card-pad"><div class="section-head-simple"><div><h3>Kategori Grup</h3><p>Label untuk mengelompokkan grup lintas device.</p></div><a class="btn btn-sm" href="{% url 'group_category_create' %}">Tambah</a></div>
+    <div class="audience-list">{% for category in categories %}<div class="audience-list-row"><div><strong>{{ category.name }}</strong><small>{{ category.group_count }} grup{% if category.description %} · {{ category.description|truncatechars:80 }}{% endif %}</small></div><div class="flex gap"><span class="badge {% if category.is_active %}badge-green{% else %}badge-gray{% endif %}">{% if category.is_active %}Aktif{% else %}Nonaktif{% endif %}</span><a class="btn btn-sm" href="{% url 'group_category_edit' category.pk %}">Edit</a></div></div>{% empty %}<div class="empty">Belum ada kategori.</div>{% endfor %}</div>
+  </section>
+
+  <section class="card card-pad"><div class="section-head-simple"><div><h3>Preset Tersimpan</h3><p>Audiens siap pakai untuk broadcast multi-grup.</p></div><a class="btn btn-sm btn-primary" href="{% url 'group_preset_create' %}">Buat Preset</a></div>
+    <div class="audience-list">{% for preset in presets %}<article class="preset-list-row"><div class="preset-list-head"><div><strong>{{ preset.name }}</strong><small>{{ preset.get_preset_type_display }}{% if preset.brand %} · {{ preset.brand.name }}{% endif %}{% if preset.category %} · Kategori {{ preset.category.name }}{% endif %}</small></div><span class="preset-count">{{ preset.resolved_count }} grup</span></div>{% if preset.description %}<p>{{ preset.description|truncatechars:120 }}</p>{% endif %}<div class="preset-preview-chips">{% for group in preset.preview_groups %}<span>{{ group.name }}</span>{% empty %}<em>Belum ada grup yang cocok.</em>{% endfor %}{% if preset.resolved_count > 5 %}<span>+{{ preset.resolved_count|add:'-5' }} lainnya</span>{% endif %}</div><div class="preset-list-actions"><span class="badge {% if preset.is_active %}badge-green{% else %}badge-gray{% endif %}">{% if preset.is_active %}Aktif{% else %}Nonaktif{% endif %}</span><div class="preset-action-buttons"><a class="btn btn-sm" href="{% url 'broadcast_create' %}?target=group">Gunakan</a><a class="btn btn-sm btn-primary" href="{% url 'group_preset_edit' preset.pk %}">Edit</a><form method="post" action="{% url 'group_preset_duplicate' preset.pk %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Duplikat</button></form></div></div></article>{% empty %}<div class="empty">Belum ada preset.</div>{% endfor %}</div>
+  </section>
 </div>
 {% endblock %}

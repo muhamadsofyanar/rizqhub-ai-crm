@@ -15,6 +15,7 @@ from .models import (
     Brand,
     Campaign,
     Contact,
+    Deal,
     GroupCategory,
     GroupCategoryMembership,
     GroupPreset,
@@ -226,20 +227,28 @@ class CampaignForm(StyledFormMixin, forms.ModelForm):
     def __init__(self, *args, tenant=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["brand"].queryset = Brand.objects.filter(tenant=tenant)
-        self.fields["connection"].queryset = ChannelConnection.objects.filter(tenant=tenant, is_active=True)
+        self.fields["connection"].queryset = ChannelConnection.objects.filter(
+            tenant=tenant, is_active=True, provider="mailketing"
+        )
+        self.fields["connection"].label = "Koneksi Mailketing"
+        self.fields["channel"].initial = "email"
+        self.fields["channel"].widget = forms.HiddenInput()
+        self.fields["name"].label = "Nama campaign email"
+        self.fields["subject"].label = "Subjek email"
+        self.fields["content"].label = "Isi email"
+        self.fields["tag_filter"].label = "Filter tag kontak (opsional)"
+        self.fields["scheduled_at"].label = "Jadwal kirim (opsional)"
         self.fields["scheduled_at"].input_formats = ["%Y-%m-%dT%H:%M"]
         self._style()
 
     def clean(self):
         data = super().clean()
+        data["channel"] = "email"
         connection = data.get("connection")
-        channel = data.get("channel")
-        if connection and channel:
-            expected = "starsender" if channel == "whatsapp" else "mailketing"
-            if connection.provider != expected:
-                self.add_error("connection", f"Channel {channel} memerlukan provider {expected}.")
-        if channel == "email" and not data.get("subject"):
-            self.add_error("subject", "Subject wajib untuk campaign email.")
+        if connection and connection.provider != "mailketing":
+            self.add_error("connection", "Campaign email wajib memakai koneksi Mailketing.")
+        if not data.get("subject"):
+            self.add_error("subject", "Subjek wajib untuk campaign email.")
         return data
 
 
@@ -315,6 +324,42 @@ class DealStageForm(StyledFormMixin, forms.Form):
             self.fields["stage"].queryset = deal.pipeline.stages.all()
             self.fields["stage"].initial = deal.stage
         self._style()
+
+
+class DealQuickUpdateForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = Deal
+        fields = ["value", "status", "owner", "expected_close_date", "lost_reason"]
+        widgets = {
+            "expected_close_date": forms.DateInput(attrs={"type": "date"}),
+        }
+        labels = {
+            "value": "Nilai potensi",
+            "status": "Hasil deal",
+            "owner": "Penanggung jawab",
+            "expected_close_date": "Target selesai",
+            "lost_reason": "Alasan tidak lanjut",
+        }
+
+    def __init__(self, *args, tenant=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        user_ids = Membership.objects.filter(
+            tenant=tenant, is_active=True
+        ).values_list("user_id", flat=True)
+        self.fields["owner"].queryset = User.objects.filter(id__in=user_ids).order_by(
+            "first_name", "username"
+        )
+        self.fields["owner"].required = False
+        self.fields["lost_reason"].required = False
+        self._style()
+
+    def clean(self):
+        data = super().clean()
+        if data.get("status") == "lost" and not (data.get("lost_reason") or "").strip():
+            self.add_error("lost_reason", "Isi alasan ketika deal ditandai tidak lanjut.")
+        if data.get("status") != "lost":
+            data["lost_reason"] = ""
+        return data
 
 
 class AIReviewForm(StyledFormMixin, forms.ModelForm):

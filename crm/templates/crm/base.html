@@ -30,7 +30,7 @@
       <a class="{% if request.resolver_match.url_name == 'inbox' or request.resolver_match.url_name == 'conversation_detail' %}active{% endif %}" href="{% url 'inbox' %}"><span class="nav-icon">✉</span><span>Inbox</span>{% if unread_total %}<span class="nav-count">{{ unread_total }}</span>{% elif handoff_count %}<span class="nav-count nav-count-danger">{{ handoff_count }}</span>{% endif %}</a>
       <a class="{% if request.resolver_match.url_name == 'contact_list' or request.resolver_match.url_name == 'contact_detail' %}active{% endif %}" href="{% url 'contact_list' %}"><span class="nav-icon">◎</span><span>Kontak & Leads</span></a>
       <a class="{% if request.resolver_match.url_name == 'pipeline_board' %}active{% endif %}" href="{% url 'pipeline_board' %}"><span class="nav-icon">▥</span><span>Pipeline</span></a>
-      <a class="{% if 'broadcast' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'broadcast_list' %}"><span class="nav-icon">◉</span><span>Broadcast</span></a>
+      <a class="{% if 'broadcast' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'broadcast_list' %}"><span class="nav-icon">◉</span><span>Promosi WhatsApp</span></a>
 
       <div class="nav-title">AI</div>
       <a class="{% if 'agent' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'agent_list' %}"><span class="nav-icon">✦</span><span>AI Agent</span></a>
@@ -47,8 +47,7 @@
       <div class="advanced-only">
         <div class="nav-title">Mode Lanjutan</div>
         {% if feature_automation %}<a class="{% if 'automation' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'automation_list' %}"><span class="nav-icon">⚡</span><span>Automation & n8n</span></a>{% endif %}
-        {% if feature_campaign %}<a href="{% url 'campaign_list' %}"><span class="nav-icon">◌</span><span>Campaign lama</span></a>{% endif %}
-        <a href="{% url 'integration_list' %}"><span class="nav-icon">↔</span><span>Integrasi lama</span></a>
+        {% if feature_campaign %}<a href="{% url 'campaign_list' %}"><span class="nav-icon">◌</span><span>Campaign Email (Lanjutan)</span></a>{% endif %}
         {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}
           <a class="{% if request.resolver_match.url_name == 'system_health' %}active{% endif %}" href="{% url 'system_health' %}"><span class="nav-icon">♡</span><span>Status Sistem</span>{% if notification_count %}<span class="nav-count nav-count-danger">{{ notification_count }}</span>{% endif %}</a>
           <a href="/admin/"><span class="nav-icon">⌘</span><span>Admin Sistem</span></a>
@@ -108,7 +107,7 @@
   const toggle = document.getElementById('uiModeToggle');
   const label = document.getElementById('uiModeLabel');
   const hint = document.getElementById('uiModeHint');
-  const storageKey = 'rizqhub-ui-mode';
+  const storageKey = 'rizqhub-ui-mode-v43';
   const savedMode = localStorage.getItem(storageKey) || 'simple';
 
   function applyMode(mode) {

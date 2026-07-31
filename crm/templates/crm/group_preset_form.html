@@ -1,8 +1,43 @@
-{% extends 'crm/base.html' %}{% block topbar %}{{ title }}{% endblock %}{% block content %}
-<style>.preset-groups ul{list-style:none;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.preset-groups li label{display:block;border:1px solid #dbe3ef;border-radius:10px;padding:10px;background:#fff}.preset-groups input{margin-right:8px}@media(max-width:700px){.preset-groups ul{grid-template-columns:1fr}}</style>
-<div class="page-head"><div><h2>{{ title }}</h2><p>Preset statis menyimpan grup terpilih. Preset dinamis mengikuti kategori.</p></div><a class="btn" href="{% url 'group_preset_list' %}">Kembali</a></div>
-<form method="post" class="card card-pad" style="max-width:1000px">{% csrf_token %}
-<div class="grid grid-2"><div>{% for field in form %}{% if field.name != 'groups' %}<div class="form-row"><label>{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endif %}{% endfor %}</div><div><div class="form-row"><label>Cari grup</label><input id="presetGroupSearch" class="form-control" placeholder="Ketik nama device atau grup"></div><div class="form-row preset-groups"><label>{{ form.groups.label }}</label>{{ form.groups }}{{ form.groups.errors }}<span class="helptext">Centang sebanyak yang diperlukan. Grup terkunci tidak ditampilkan.</span></div></div></div>
-<div class="safety-box">Sebelum broadcast dikirim, seluruh anggota preset tetap ditampilkan kembali untuk diperiksa.</div><div class="actions mt-2"><a class="btn" href="{% url 'group_preset_list' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Preset</button></div></form>
-<script>document.getElementById('presetGroupSearch')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.preset-groups li').forEach(li=>li.hidden=!li.textContent.toLowerCase().includes(q))});</script>
+{% extends 'crm/base.html' %}
+{% block title %}{{ title }} — Audiens Grup{% endblock %}
+{% block topbar %}{{ title }}{% endblock %}
+{% block topbar_subtitle %}Simpan pilihan grup statis atau aturan kategori dinamis{% endblock %}
+{% block help_title %}Memilih Jenis Preset{% endblock %}
+{% block help_content %}<p>Pilih <strong>Statis</strong> saat daftar grup harus tetap. Pilih <strong>Dinamis</strong> saat semua grup dengan kategori tertentu harus otomatis ikut.</p>{% endblock %}
+{% block content %}
+<div class="page-head"><div><a class="back-link" href="{% url 'group_preset_list' %}">← Audiens Grup</a><h2 class="mt-2">{{ title }}</h2><p>Preset hanya menyimpan pilihan. Pesan tidak dikirim dari halaman ini.</p></div></div>
+<form method="post" class="preset-editor-layout">{% csrf_token %}
+  <section class="card card-pad">
+    {% if form.errors %}<div class="alert alert-error">Preset belum tersimpan. Periksa bidang yang diberi tanda merah.</div>{% endif %}
+    <div class="form-grid"><div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}</div><div class="form-row"><label>{{ form.brand.label }}</label>{{ form.brand }}{{ form.brand.errors }}<span class="helptext">Opsional. Membatasi preset dinamis pada satu bisnis.</span></div></div>
+    <div class="form-row"><label>{{ form.description.label }}</label>{{ form.description }}{{ form.description.errors }}</div>
+    <div class="preset-type-cards"><label class="preset-type-card"><input type="radio" name="preset_type" value="static" {% if form.preset_type.value == 'static' or not form.preset_type.value %}checked{% endif %}><span><strong>Preset Statis</strong><small>Pilih grup satu per satu. Anggotanya tidak berubah otomatis.</small></span></label><label class="preset-type-card"><input type="radio" name="preset_type" value="dynamic" {% if form.preset_type.value == 'dynamic' %}checked{% endif %}><span><strong>Preset Dinamis</strong><small>Semua grup pada kategori yang dipilih otomatis menjadi anggota.</small></span></label></div>{{ form.preset_type.errors }}
+    <div id="dynamicPresetFields" class="form-row"><label>{{ form.category.label }}</label>{{ form.category }}{{ form.category.errors }}<span class="helptext">Kategori wajib untuk preset dinamis.</span></div>
+    <label class="simple-check">{{ form.is_active }} <span><strong>Preset aktif</strong><small>Tampilkan preset ini pada wizard broadcast.</small></span></label>
+    <div class="actions"><a class="btn" href="{% url 'group_preset_list' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Preset</button></div>
+  </section>
+
+  <aside id="staticPresetFields" class="card card-pad preset-picker-panel">
+    <div class="section-head-simple"><div><h3>Pilih Grup</h3><p>Grup terkunci atau nonaktif tidak ditampilkan.</p></div><span id="presetSelectedCount" class="badge badge-green">0 dipilih</span></div>
+    <div class="preset-picker-toolbar"><input id="presetGroupSearch" class="form-control" placeholder="Cari nama device atau grup"><button id="selectVisibleGroups" class="btn btn-sm" type="button">Pilih yang terlihat</button><button id="clearPresetGroups" class="btn btn-sm" type="button">Kosongkan</button></div>
+    <div class="preset-groups-v2">{{ form.groups }}{{ form.groups.errors }}</div>
+    <div class="safety-box mt-2">Saat broadcast dibuat, semua grup dalam preset akan ditampilkan kembali untuk pemeriksaan akhir.</div>
+  </aside>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const staticPanel=document.getElementById('staticPresetFields'); const dynamicPanel=document.getElementById('dynamicPresetFields'); const radios=[...document.querySelectorAll('input[name="preset_type"]')];
+  const search=document.getElementById('presetGroupSearch'); const boxes=[...document.querySelectorAll('.preset-groups-v2 input[type="checkbox"]')]; const count=document.getElementById('presetSelectedCount');
+  function mode(){const value=radios.find(r=>r.checked)?.value||'static';staticPanel.hidden=value!=='static';dynamicPanel.hidden=value!=='dynamic';}
+  function updateCount(){count.textContent=`${boxes.filter(b=>b.checked).length} dipilih`;}
+  function visibleBoxes(){return boxes.filter(box=>!box.closest('li')?.hidden);}
+  radios.forEach(r=>r.addEventListener('change',mode)); boxes.forEach(b=>b.addEventListener('change',updateCount));
+  search?.addEventListener('input',()=>{const q=search.value.toLowerCase();document.querySelectorAll('.preset-groups-v2 li').forEach(li=>li.hidden=!li.textContent.toLowerCase().includes(q));});
+  document.getElementById('selectVisibleGroups')?.addEventListener('click',()=>{visibleBoxes().forEach(b=>b.checked=true);updateCount();});
+  document.getElementById('clearPresetGroups')?.addEventListener('click',()=>{boxes.forEach(b=>b.checked=false);updateCount();});
+  mode();updateCount();
+})();
+</script>
 {% endblock %}

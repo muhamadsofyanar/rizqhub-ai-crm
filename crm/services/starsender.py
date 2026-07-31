@@ -118,7 +118,16 @@ def test_account(account: StarSenderAccount) -> dict:
 
 
 def test_device(device: StarSenderDevice) -> dict:
-    return _request("GET", "/whatsapp/groups", _device_key(device))
+    try:
+        return _request("GET", "/whatsapp/groups", _device_key(device))
+    except StarSenderError as exc:
+        if exc.status_code in {401, 403} or "Invalid API Key" in str(exc):
+            raise StarSenderError(
+                "Device Key ditolak StarSender. Gunakan Device Key dari menu Device → Detail pada device yang sama, bukan Account API Key. "
+                "Simpan ulang key tanpa spasi lalu uji kembali.",
+                status_code=exc.status_code,
+            ) from exc
+        raise
 
 
 def _extract_collection(data: Any, candidate_keys: tuple[str, ...]) -> list[dict]:
@@ -333,7 +342,15 @@ def sync_devices(account: StarSenderAccount) -> dict:
 
 
 def list_groups(device: StarSenderDevice) -> tuple[list[dict], dict]:
-    raw = _request("GET", "/whatsapp/groups", _device_key(device))
+    try:
+        raw = _request("GET", "/whatsapp/groups", _device_key(device))
+    except StarSenderError as exc:
+        if exc.status_code in {401, 403} or "Invalid API Key" in str(exc):
+            raise StarSenderError(
+                f"Device Key untuk device '{device}' tidak valid. Salin Device Key dari StarSender → Device → Detail pada device yang sama; jangan memakai Account API Key.",
+                status_code=exc.status_code,
+            ) from exc
+        raise
     rows = _extract_collection(raw.get("data", raw), ("groups", "rows", "items", "data"))
     return rows, raw
 

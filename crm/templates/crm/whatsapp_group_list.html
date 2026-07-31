@@ -1,6 +1,33 @@
-{% extends 'crm/base.html' %}{% block topbar %}Daftar Grup WhatsApp{% endblock %}{% block topbar_subtitle %}Semua grup yang terbaca dari seluruh device{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Grup WhatsApp</h2><p>Cari, kategorikan, kunci grup internal, lalu masukkan ke preset broadcast.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'starsender_center' %}">WhatsApp & Channel</a><a class="btn" href="{% url 'group_preset_list' %}">Preset Grup</a><a class="btn btn-primary" href="{% url 'broadcast_create' %}?target=group">Buat Broadcast Grup</a></div></div>
-<form method="get" class="card card-pad"><div class="grid grid-3"><div class="form-row"><label>Cari grup</label><input class="form-control" name="q" value="{{ query }}" placeholder="Nama grup atau kategori"></div><div class="form-row"><label>Device</label><select class="form-control" name="device"><option value="">Semua device</option>{% for device in devices %}<option value="{{ device.id }}" {% if selected_device == device.id|stringformat:'s' %}selected{% endif %}>{{ device }}</option>{% endfor %}</select></div><div class="form-row" style="align-self:end"><button class="btn btn-primary" type="submit">Tampilkan</button></div></div></form>
-<div class="card mt-2"><table><thead><tr><th>Nama grup</th><th>Device</th><th>Brand</th><th>Kategori</th><th>Keamanan</th><th></th></tr></thead><tbody>
-{% for group in groups %}<tr><td><strong>{{ group.name }}</strong><br><span class="muted">{{ group.external_group_id }}</span></td><td>{{ group.device }}</td><td>{{ group.device.brand.name|default:'Belum dipetakan' }}</td><td>{% for link in group.category_links.all %}<span class="badge">{{ link.category.name }}</span>{% empty %}<span class="muted">Belum berkategori</span>{% endfor %}</td><td>{% if group.is_locked %}<span class="badge badge-red">Tidak boleh broadcast</span>{% else %}<span class="badge badge-green">Dapat dipilih</span>{% endif %}</td><td><a class="btn btn-sm" href="{% url 'whatsapp_group_edit' group.pk %}">Edit</a></td></tr>{% empty %}<tr><td colspan="6"><div class="empty-chat"><div><h3>Belum ada grup tersinkron</h3><p>Masukkan Device Key pada device yang benar, lalu tekan Sinkronkan Semua Grup.</p><a class="btn btn-primary" href="{% url 'starsender_center' %}">Buka WhatsApp & Channel</a></div></div></td></tr>{% endfor %}
-</tbody></table></div>{% endblock %}
+{% extends 'crm/base.html' %}
+{% block title %}Daftar Grup WhatsApp — RizqHub AI{% endblock %}
+{% block topbar %}Daftar Grup WhatsApp{% endblock %}
+{% block topbar_subtitle %}Cari, kategorikan, dan pilih grup untuk promosi{% endblock %}
+{% block help_title %}Mengelola Grup{% endblock %}
+{% block help_content %}<p>Gunakan checkbox untuk mengatur banyak grup sekaligus. Grup internal dapat dikunci agar tidak pernah masuk broadcast.</p><p>Setelah kategori rapi, buat preset pada menu Audiens Grup.</p>{% endblock %}
+{% block content %}
+<div class="page-head"><div><a class="back-link" href="{% url 'broadcast_list' %}">← Promosi WhatsApp</a><h2 class="mt-2">Daftar Grup WhatsApp</h2><p>Semua grup yang berhasil dibaca dari Device Key yang valid.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'starsender_center' %}">Sinkronisasi Device</a><a class="btn" href="{% url 'group_preset_list' %}">Audiens Grup</a><a class="btn btn-primary" href="{% url 'broadcast_create' %}?target=group">Buat Broadcast Grup</a></div></div>
+
+<form method="get" class="card card-pad group-filter-grid">
+  <div class="form-row"><label>Cari grup</label><input class="form-control" name="q" value="{{ query }}" placeholder="Nama grup atau ID grup"></div>
+  <div class="form-row"><label>Device</label><select class="form-control" name="device"><option value="">Semua device</option>{% for device in devices %}<option value="{{ device.id }}" {% if selected_device == device.id|stringformat:'s' %}selected{% endif %}>{{ device }}</option>{% endfor %}</select></div>
+  <div class="form-row"><label>Kategori</label><select class="form-control" name="category"><option value="">Semua kategori</option>{% for category in categories %}<option value="{{ category.id }}" {% if selected_category == category.id|stringformat:'s' %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
+  <div class="form-row group-filter-action"><button class="btn btn-primary" type="submit">Tampilkan</button></div>
+</form>
+
+<form method="post" action="{% url 'whatsapp_group_bulk_action' %}" class="card mt-2">{% csrf_token %}
+  <div class="bulk-action-bar"><div><strong id="selectedGroupCount">0 grup dipilih</strong><small>Pilih grup melalui checkbox pada tabel.</small></div><select class="form-control" name="action" id="groupBulkAction"><option value="">Pilih aksi</option><option value="category">Tambahkan kategori</option><option value="lock">Kunci dari broadcast</option><option value="unlock">Izinkan broadcast</option><option value="activate">Aktifkan grup</option><option value="deactivate">Nonaktifkan grup</option></select><select class="form-control" name="category" id="groupBulkCategory"><option value="">Pilih kategori</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select><button class="btn btn-primary" type="submit">Terapkan</button></div>
+  <div class="table-wrap"><table class="table group-management-table"><thead><tr><th><input id="selectAllGroups" type="checkbox" aria-label="Pilih semua grup"></th><th>Grup</th><th>Device & Brand</th><th>Kategori</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for group in groups %}<tr><td><input class="group-checkbox" type="checkbox" name="groups" value="{{ group.id }}"></td><td><strong>{{ group.name }}</strong><br><span class="muted mono-small">{{ group.external_group_id }}</span></td><td><strong>{{ group.device }}</strong><br><span class="muted">{{ group.device.brand.name|default:'Belum dipetakan' }}</span></td><td><div class="category-chip-wrap">{% for link in group.category_links.all %}<span class="badge">{{ link.category.name }}</span>{% empty %}<span class="muted">Belum berkategori</span>{% endfor %}</div></td><td><div class="status-stack">{% if not group.is_active %}<span class="badge badge-gray">Nonaktif</span>{% elif group.is_locked %}<span class="badge badge-red">Dikunci</span>{% else %}<span class="badge badge-green">Siap dipilih</span>{% endif %}<small>AI: {{ group.get_ai_mode_display }}</small></div></td><td><a class="btn btn-sm" href="{% url 'whatsapp_group_edit' group.pk %}">Edit</a></td></tr>{% empty %}<tr><td colspan="6"><div class="empty"><h3>Belum ada grup</h3><p>Pastikan Device Key berasal dari device yang sama, lalu sinkronkan grup.</p><a class="btn btn-primary" href="{% url 'starsender_center' %}">Buka WhatsApp & Channel</a></div></td></tr>{% endfor %}
+  </tbody></table></div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const boxes=[...document.querySelectorAll('.group-checkbox')]; const all=document.getElementById('selectAllGroups'); const count=document.getElementById('selectedGroupCount'); const action=document.getElementById('groupBulkAction'); const category=document.getElementById('groupBulkCategory');
+  function update(){const selected=boxes.filter(b=>b.checked).length;count.textContent=`${selected} grup dipilih`;all.checked=selected===boxes.length&&boxes.length>0;all.indeterminate=selected>0&&selected<boxes.length;}
+  all?.addEventListener('change',()=>{boxes.forEach(b=>b.checked=all.checked);update();}); boxes.forEach(b=>b.addEventListener('change',update));
+  function categoryState(){category.hidden=action.value!=='category';category.required=action.value==='category';} action?.addEventListener('change',categoryState);categoryState();update();
+})();
+</script>
+{% endblock %}

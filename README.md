@@ -1,6 +1,19 @@
-# RizqHub AI CRM V4 Consolidated
+# RizqHub AI CRM V4.3 Organic Growth Console
 
 Rilis gabungan untuk CRM multi-brand dan multi-agent yang berjalan dengan Django, PostgreSQL, Redis, Celery, Gunicorn, Docker Compose, dan Coolify. V4 dirancang agar **kode dipasang sekali**, lalu modul diaktifkan dari dashboard melalui feature flag database tanpa redeploy berulang.
+
+
+## Fokus V4.3
+
+V4.3 memprioritaskan pemasaran organik WhatsApp dan operasional harian sebelum optimasi agent otomatis:
+
+- **Promosi WhatsApp:** personal, grup, multi-grup, template teks/media, kategori, preset, draft, jadwal, progres, dan riwayat.
+- **Inbox:** daftar chat, isi chat, dan detail pelanggan dapat di-scroll secara independen.
+- **Pipeline:** satu bisnis per papan, perpindahan tahap, nilai potensi, pemilik, target selesai, serta status berhasil/tidak lanjut.
+- **Campaign Email:** dipisahkan dari WhatsApp dan hanya menampilkan koneksi Mailketing.
+- **StarSender:** Account API Key membaca device; Device Key masing-masing device menguji pengiriman dan membaca grup.
+
+Tidak ada migration database baru pada V4.3.
 
 ## Prinsip rilis
 

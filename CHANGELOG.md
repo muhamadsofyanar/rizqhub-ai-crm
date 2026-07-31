@@ -1,3 +1,15 @@
+# V4.3 Organic Growth Console
+
+- Mendesain ulang Promosi WhatsApp sebagai pusat kerja: kirim personal, grup, multi-grup, template, audiens, preset, progres, dan riwayat.
+- Memperjelas detail broadcast: status Draft/Siap/Antrean/Mengirim/Terkirim/Gagal, progress bar, pencarian penerima, filter status, preview pesan, dan pemantauan otomatis.
+- Memperbaiki scroll Inbox menjadi tiga area independen: daftar chat, isi percakapan, dan detail pelanggan.
+- Menyederhanakan Pipeline menjadi satu bisnis per tampilan, menambah pencarian, statistik, perpindahan tahap, nilai potensi, penanggung jawab, target selesai, serta status berhasil/tidak lanjut.
+- Mendesain ulang Template menjadi galeri dengan filter, preview WhatsApp, variabel personalisasi, edit, dan duplikasi aman.
+- Mendesain ulang Kategori & Preset menjadi Audiens Grup; mendukung pencarian, ringkasan grup, edit, duplikasi nonaktif, preset statis/dinamis, dan bulk category/lock/active pada daftar grup.
+- Memisahkan Campaign Email dari Promosi WhatsApp agar tidak ada dua jalur WhatsApp yang membingungkan.
+- Memperjelas urutan StarSender per device: isi key & mapping, uji Device Key, lalu ambil grup. Error 401/403 sekarang menjelaskan bahwa Device Key device yang sama diperlukan, bukan Account API Key.
+- Tidak menambah atau menghapus tabel database.
+
 # V4.2 Organic Broadcast
 
 - Memperbaiki koneksi Account API Key dan sinkronisasi device.

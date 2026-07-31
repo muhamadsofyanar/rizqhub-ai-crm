@@ -1,27 +1,59 @@
 {% extends 'crm/base.html' %}
-{% block title %}Broadcast — RizqHub AI CRM{% endblock %}
-{% block topbar %}Broadcast{% endblock %}
-{% block topbar_subtitle %}Kirim personal atau grup dengan aman{% endblock %}
-{% block help_title %}Broadcast{% endblock %}
+{% block title %}Promosi WhatsApp — RizqHub AI{% endblock %}
+{% block topbar %}Promosi WhatsApp{% endblock %}
+{% block topbar_subtitle %}Kirim personal, grup, multi-grup, dan preset dari satu tempat{% endblock %}
+{% block help_title %}Pusat Promosi WhatsApp{% endblock %}
 {% block help_content %}
-<p>Broadcast dibuat sebagai <strong>draft</strong> terlebih dahulu. Tidak ada pesan terkirim saat Anda menyelesaikan wizard.</p>
-<ol><li>Pilih personal atau grup.</li><li>Pilih device WhatsApp.</li><li>Pilih penerima.</li><li>Susun pesan.</li><li>Atur jadwal dan izin.</li><li>Tinjau draft, lalu konfirmasi KIRIM pada halaman berikutnya.</li></ol>
-<p class="safety-box">Gunakan hanya untuk penerima yang memberi izin. Delay minimal 30 detik dan pembatasan penerima tetap diberlakukan.</p>
+<p>Gunakan urutan sederhana: pastikan device siap, siapkan audiens, buat template, buat draft broadcast, lalu tinjau penerima sebelum mengirim.</p>
+<ol>
+  <li><strong>Personal:</strong> hanya kontak yang memiliki izin promosi.</li>
+  <li><strong>Grup:</strong> pilih langsung, gunakan kategori, atau gunakan preset.</li>
+  <li><strong>Draft:</strong> belum mengirim apa pun.</li>
+  <li><strong>Antrean:</strong> pesan sedang menunggu giliran sesuai jeda.</li>
+</ol>
 {% endblock %}
 {% block content %}
-<div class="page-head"><div><h2>Broadcast</h2><p>Semua pengiriman memakai preview, antrean bertahap, audit, dan tombol pembatalan.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'broadcast_template_list' %}">Template</a><a class="btn" href="{% url 'whatsapp_group_list' %}">Daftar Grup</a><a class="btn" href="{% url 'group_preset_list' %}">Preset Grup</a><a class="btn btn-primary" href="{% url 'broadcast_create' %}">+ Buat Broadcast</a></div></div>
-<div class="quick-actions">
-  <a class="quick-action" href="{% url 'broadcast_create' %}?target=personal"><span class="quick-action-icon">◎</span><span><strong>Kirim Personal</strong><small>Pilih kontak consent atau masukkan nomor yang sudah memberi izin.</small></span></a>
-  <a class="quick-action" href="{% url 'broadcast_create' %}?target=group"><span class="quick-action-icon">◉</span><span><strong>Kirim ke Grup</strong><small>Pilih banyak grup, kategori, atau preset tersimpan.</small></span></a>
-  <a class="quick-action" href="{% url 'broadcast_template_list' %}"><span class="quick-action-icon">▤</span><span><strong>Template Pesan</strong><small>Simpan teks dan media untuk digunakan berkali-kali.</small></span></a>
-  <a class="quick-action" href="{% url 'group_preset_list' %}"><span class="quick-action-icon">▦</span><span><strong>Preset Grup</strong><small>Simpan kumpulan grup agar dapat dipakai kembali.</small></span></a>
-  <a class="quick-action" href="{% url 'starsender_center' %}"><span class="quick-action-icon">⌁</span><span><strong>Periksa Device</strong><small>Pastikan device connected dan pengiriman aktif.</small></span></a>
+<div class="page-head growth-head">
+  <div><span class="eyebrow">Organic Growth Console</span><h2>Promosi WhatsApp</h2><p>Semua aktivitas pemasaran WhatsApp dikelola di sini. Campaign lama tidak diperlukan untuk promosi WhatsApp.</p></div>
+  <div class="flex gap wrap"><a class="btn btn-primary" href="{% url 'broadcast_create' %}">+ Buat Broadcast</a></div>
 </div>
-<div class="alert alert-warning mt-2">Pengiriman massal tetap nonaktif sampai Owner mengaktifkan Broadcast Personal atau Broadcast Grup melalui menu <strong>Fitur</strong>. Anda tetap dapat menyiapkan draft dengan aman.</div>
-<section class="card mt-2">
-  <div class="card-head"><div><h3>Riwayat Broadcast</h3><small class="muted">Klik nama untuk melihat penerima dan progres.</small></div></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Nama</th><th>Tujuan</th><th>Device</th><th>Status</th><th>Progres</th><th>Dibuat</th></tr></thead><tbody>
-  {% for item in broadcasts %}<tr><td><a href="{% url 'broadcast_detail' item.pk %}"><strong>{{ item.name }}</strong></a></td><td>{{ item.get_target_type_display }}</td><td>{{ item.device }}</td><td><span class="badge {% if item.status == 'completed' %}badge-green{% elif item.status == 'failed' %}badge-red{% elif item.status == 'draft' %}badge-gray{% else %}badge-yellow{% endif %}">{{ item.get_status_display }}</span></td><td>{{ item.sent_count }}/{{ item.total_count }} terkirim{% if item.failed_count %} · {{ item.failed_count }} gagal{% endif %}</td><td>{{ item.created_at|date:'d M Y H:i' }}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Belum ada broadcast. Mulai dari tombol Buat Broadcast.</td></tr>{% endfor %}
-  </tbody></table></div>
+
+<section class="growth-quick-grid">
+  <a class="growth-action-card" href="{% url 'broadcast_create' %}?target=personal"><span class="growth-action-icon">👤</span><div><strong>Kirim Personal</strong><small>Satu nomor, banyak kontak, atau nomor manual.</small></div><span>→</span></a>
+  <a class="growth-action-card" href="{% url 'broadcast_create' %}?target=group"><span class="growth-action-icon">👥</span><div><strong>Kirim ke Grup</strong><small>Satu grup, multi-grup, kategori, atau preset.</small></div><span>→</span></a>
+  <a class="growth-action-card" href="{% url 'broadcast_template_list' %}"><span class="growth-action-icon">📝</span><div><strong>Template Pesan</strong><small>{{ template_count }} template aktif; teks dan media.</small></div><span>→</span></a>
+  <a class="growth-action-card" href="{% url 'group_preset_list' %}"><span class="growth-action-icon">🎯</span><div><strong>Audiens Grup</strong><small>{{ preset_count }} preset dan {{ group_count }} grup siap dipilih.</small></div><span>→</span></a>
+</section>
+
+{% if not device_count %}
+<div class="alert alert-warning mt-2"><strong>Belum ada device siap kirim.</strong> Buka <a href="{% url 'starsender_center' %}">WhatsApp & Channel</a>, isi Device Key yang benar, aktifkan pengiriman, lalu uji device.</div>
+{% endif %}
+
+<div class="grid grid-4 mt-2">
+  <div class="card stat"><div class="stat-label">Draft</div><div class="stat-value">{{ stats.draft }}</div><div class="stat-foot">Belum dikirim dan masih aman diedit ulang dengan membuat draft baru.</div></div>
+  <div class="card stat"><div class="stat-label">Sedang berjalan</div><div class="stat-value">{{ stats.active }}</div><div class="stat-foot">Terjadwal, antre, atau sedang dikirim.</div></div>
+  <div class="card stat"><div class="stat-label">Selesai</div><div class="stat-value metric-good">{{ stats.completed }}</div><div class="stat-foot">Broadcast yang sudah menyelesaikan seluruh tujuan.</div></div>
+  <div class="card stat"><div class="stat-label">Total pesan diterima provider</div><div class="stat-value">{{ stats.sent }}</div><div class="stat-foot">Akumulasi tujuan berstatus terkirim.</div></div>
+</div>
+
+<section class="card card-pad mt-2">
+  <div class="section-head-simple"><div><h3>Riwayat Broadcast</h3><p>Cari draft atau pantau proses pengiriman.</p></div></div>
+  <form method="get" class="growth-filter-bar">
+    <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Cari nama, device, preset, atau isi pesan">
+    <select class="form-control" name="target"><option value="">Semua tujuan</option><option value="personal" {% if selected_target == 'personal' %}selected{% endif %}>Personal</option><option value="group" {% if selected_target == 'group' %}selected{% endif %}>Grup</option></select>
+    <select class="form-control" name="status"><option value="">Semua status</option><option value="draft" {% if selected_status == 'draft' %}selected{% endif %}>Draft</option><option value="scheduled" {% if selected_status == 'scheduled' %}selected{% endif %}>Terjadwal</option><option value="queued" {% if selected_status == 'queued' %}selected{% endif %}>Antrean</option><option value="running" {% if selected_status == 'running' %}selected{% endif %}>Berjalan</option><option value="completed" {% if selected_status == 'completed' %}selected{% endif %}>Selesai</option><option value="failed" {% if selected_status == 'failed' %}selected{% endif %}>Gagal</option><option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Dibatalkan</option></select>
+    <button class="btn" type="submit">Tampilkan</button>
+  </form>
+
+  <div class="broadcast-history-list">
+    {% for broadcast in broadcasts %}
+    <a class="broadcast-history-row" href="{% url 'broadcast_detail' broadcast.pk %}">
+      <div class="history-main"><div class="history-title"><strong>{{ broadcast.name }}</strong><span class="badge {% if broadcast.target_type == 'group' %}badge-yellow{% else %}badge-gray{% endif %}">{{ broadcast.get_target_type_display }}</span></div><small>{{ broadcast.device }}{% if broadcast.preset %} · Preset {{ broadcast.preset.name }}{% endif %} · {{ broadcast.created_at|date:'d M Y H:i' }}</small></div>
+      <div class="history-progress"><strong>{{ broadcast.sent_count }}/{{ broadcast.total_count }}</strong><small>Terkirim</small></div>
+      <div><span class="badge {% if broadcast.status == 'completed' %}badge-green{% elif broadcast.status == 'failed' %}badge-red{% elif broadcast.status == 'running' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}badge-yellow{% else %}badge-gray{% endif %}">{{ broadcast.get_status_display }}</span></div>
+      <span class="history-arrow">→</span>
+    </a>
+    {% empty %}<div class="empty"><h3>Belum ada broadcast</h3><p>Mulai dari satu nomor atau satu grup uji terlebih dahulu.</p><a class="btn btn-primary" href="{% url 'broadcast_create' %}">Buat Broadcast Pertama</a></div>{% endfor %}
+  </div>
 </section>
 {% endblock %}

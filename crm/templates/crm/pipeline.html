@@ -1,4 +1,47 @@
-{% extends 'crm/base.html' %}{% block topbar %}Sales Pipeline{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Sales pipeline</h2><p>Kontak WhatsApp baru otomatis dibuatkan deal pada tahap pertama.</p></div><a class="btn" href="/admin/crm/deal/add/">+ Tambah deal</a></div>
-{% for pipeline in pipelines %}<div class="card card-pad" style="margin-bottom:18px"><div class="flex between items-center"><div><h3 class="mt-0 mb-0">{{ pipeline.name }}</h3><small class="muted">{{ pipeline.brand.name }}</small></div></div><div class="pipeline-scroll mt-2">{% for stage in pipeline.stages.all %}<div class="stage"><div class="stage-head"><span>{{ stage.name }}</span><span class="badge">{{ stage.deals.count }}</span></div>{% for deal in stage.deals.all %}<div class="deal-card"><div class="deal-title">{{ deal.title }}</div><div class="deal-meta">{{ deal.contact }}<br>Rp{{ deal.value|floatformat:0 }}</div><form method="post" action="{% url 'deal_move' deal.id %}" class="mt-2">{% csrf_token %}<select name="stage" class="form-control">{% for option in pipeline.stages.all %}<option value="{{ option.id }}" {% if option.id == deal.stage_id %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select><button class="btn btn-sm mt-2" type="submit">Pindahkan</button></form></div>{% empty %}<div class="muted" style="font-size:12px;padding:10px">Belum ada deal</div>{% endfor %}</div>{% endfor %}</div></div>{% empty %}<div class="card empty">Belum ada pipeline.</div>{% endfor %}
+{% extends 'crm/base.html' %}
+{% block title %}Pipeline — RizqHub AI{% endblock %}
+{% block topbar %}Pipeline Penjualan{% endblock %}
+{% block topbar_subtitle %}Pantau calon pelanggan dari pertanyaan awal sampai transaksi selesai{% endblock %}
+{% block help_title %}Cara memakai Pipeline{% endblock %}
+{% block help_content %}
+<p>Pilih bisnis di bagian atas, lalu lihat posisi setiap calon pelanggan. Gunakan tombol <strong>Pindahkan</strong> pada kartu saat tahapnya berubah.</p>
+<ul><li><strong>Open:</strong> masih diproses.</li><li><strong>Won:</strong> transaksi berhasil.</li><li><strong>Lost:</strong> tidak dilanjutkan.</li></ul>
+{% endblock %}
+{% block content %}
+<div class="page-head"><div><h2>Pipeline Penjualan</h2><p>Satu papan untuk satu bisnis agar fokus dan tidak melebar ke samping tanpa konteks.</p></div><a class="btn" href="{% url 'contact_list' %}">Buka Kontak & Leads</a></div>
+
+{% if pipelines %}
+<nav class="pipeline-tabs" aria-label="Pilih pipeline">{% for pipeline in pipelines %}<a class="pipeline-tab {% if selected_pipeline.id == pipeline.id %}active{% endif %}" href="?pipeline={{ pipeline.id }}"><strong>{{ pipeline.brand.name }}</strong><small>{{ pipeline.name }}</small></a>{% endfor %}</nav>
+
+<div class="grid grid-4 mt-2">
+  <div class="card stat"><div class="stat-label">Deal aktif</div><div class="stat-value">{{ board_open }}</div><div class="stat-foot">Masih membutuhkan tindak lanjut.</div></div>
+  <div class="card stat"><div class="stat-label">Nilai potensi</div><div class="stat-value stat-money">Rp{{ board_total|floatformat:0 }}</div><div class="stat-foot">Total nilai deal aktif.</div></div>
+  <div class="card stat"><div class="stat-label">Berhasil</div><div class="stat-value metric-good">{{ board_won }}</div><div class="stat-foot">Deal berstatus won.</div></div>
+  <div class="card stat"><div class="stat-label">Tidak lanjut</div><div class="stat-value">{{ board_lost }}</div><div class="stat-foot">Deal berstatus lost.</div></div>
+</div>
+
+<section class="card card-pad mt-2 pipeline-board-card">
+  <div class="section-head-simple pipeline-board-head"><div><span class="eyebrow">{{ selected_pipeline.brand.name }}</span><h3>{{ selected_pipeline.name }}</h3><p>Geser papan secara horizontal hanya untuk melihat tahap berikutnya. Setiap kartu dapat dipindahkan melalui dropdown.</p></div><form method="get" class="pipeline-search"><input type="hidden" name="pipeline" value="{{ selected_pipeline.id }}"><input class="form-control" name="q" value="{{ query }}" placeholder="Cari nama, nomor, perusahaan, atau deal"><button class="btn" type="submit">Cari</button></form></div>
+
+  <div class="pipeline-scroll pipeline-scroll-v2">
+    {% for stage in stages %}
+    <section class="stage stage-v2">
+      <header class="stage-head-v2"><div><strong>{{ stage.name }}</strong><small>{{ stage.visible_count }} deal · Rp{{ stage.visible_value|floatformat:0 }}</small></div><span class="stage-probability">{{ stage.probability }}%</span></header>
+      <div class="stage-deals">
+      {% for deal in stage.visible_deals %}
+        <article class="deal-card deal-card-v2">
+          <div class="deal-card-top"><div><strong>{{ deal.title }}</strong><a href="{% url 'contact_detail' deal.contact_id %}">{{ deal.contact.name|default:deal.contact.phone }}</a></div><span class="badge {% if deal.status == 'won' %}badge-green{% elif deal.status == 'lost' %}badge-red{% else %}badge-gray{% endif %}">{{ deal.get_status_display }}</span></div>
+          <div class="deal-facts"><span>Nilai <strong>Rp{{ deal.value|floatformat:0 }}</strong></span><span>Pemilik <strong>{{ deal.owner.username|default:'Belum ditugaskan' }}</strong></span><span>Aktivitas <strong>{{ deal.updated_at|date:'d M H:i' }}</strong></span></div>
+          <form method="post" action="{% url 'deal_move' deal.id %}" class="deal-move-form">{% csrf_token %}<input type="hidden" name="pipeline" value="{{ selected_pipeline.id }}"><input type="hidden" name="q" value="{{ query }}"><select name="stage" class="form-control" aria-label="Pindahkan tahap {{ deal.title }}">{% for option in stages %}<option value="{{ option.id }}" {% if option.id == deal.stage_id %}selected{% endif %}>{{ option.name }}</option>{% endfor %}</select><button class="btn btn-sm" type="submit">Pindahkan</button></form>
+          <details class="deal-quick-edit"><summary>Ubah nilai, pemilik, atau hasil</summary><form method="post" action="{% url 'deal_quick_update' deal.id %}">{% csrf_token %}<input type="hidden" name="pipeline" value="{{ selected_pipeline.id }}"><input type="hidden" name="q" value="{{ query }}"><div class="deal-edit-grid"><label>Nilai potensi<input class="form-control" name="value" type="number" min="0" step="1000" value="{{ deal.value|floatformat:0 }}"></label><label>Hasil deal<select class="form-control" name="status"><option value="open" {% if deal.status == 'open' %}selected{% endif %}>Masih diproses</option><option value="won" {% if deal.status == 'won' %}selected{% endif %}>Berhasil</option><option value="lost" {% if deal.status == 'lost' %}selected{% endif %}>Tidak lanjut</option></select></label><label>Penanggung jawab<select class="form-control" name="owner"><option value="">Belum ditugaskan</option>{% for person in pipeline_users %}<option value="{{ person.id }}" {% if deal.owner_id == person.id %}selected{% endif %}>{{ person.get_full_name|default:person.username }}</option>{% endfor %}</select></label><label>Target selesai<input class="form-control" name="expected_close_date" type="date" value="{{ deal.expected_close_date|date:'Y-m-d' }}"></label><label class="span-2">Alasan tidak lanjut<input class="form-control" name="lost_reason" value="{{ deal.lost_reason }}" placeholder="Wajib bila status Tidak lanjut"></label></div><button class="btn btn-primary btn-sm" type="submit">Simpan perubahan</button></form></details>
+        </article>
+      {% empty %}<div class="stage-empty">Belum ada deal pada tahap ini.</div>{% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="card empty"><h3>Belum ada pipeline</h3><p>Jalankan bootstrap atau buat pipeline melalui Admin Sistem.</p></div>
+{% endif %}
 {% endblock %}

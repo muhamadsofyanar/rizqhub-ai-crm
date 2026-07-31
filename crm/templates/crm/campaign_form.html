@@ -1,0 +1,14 @@
+{% extends 'crm/base.html' %}
+{% block title %}{{ title }} — RizqHub AI{% endblock %}
+{% block topbar %}{{ title }}{% endblock %}
+{% block topbar_subtitle %}Gunakan terutama untuk email Mailketing{% endblock %}
+{% block content %}
+<div class="page-head"><div><a class="back-link" href="{% url 'campaign_list' %}">← Campaign Email</a><h2 class="mt-2">{{ title }}</h2><p>Untuk personal dan grup WhatsApp, proses yang lebih jelas tersedia pada Promosi WhatsApp.</p></div><a class="btn" href="{% url 'broadcast_list' %}">Buka Promosi WhatsApp</a></div>
+<div class="alert alert-success"><strong>Halaman ini hanya untuk email Mailketing.</strong> Pengiriman WhatsApp personal dan grup berada di menu Promosi WhatsApp.</div>
+<form method="post" class="card card-pad form-card">{% csrf_token %}
+  {% if form.errors %}<div class="alert alert-error">Periksa bidang yang diberi tanda merah.</div>{% endif %}
+  <div class="form-grid">{% for field in form %}<div class="form-row {% if field.name == 'content' %}span-2{% endif %}"><label>{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}</div>
+  <div class="safety-box">Campaign hanya mengambil kontak dengan consent marketing aktif. Kontak opt-out otomatis dilewati.</div>
+  <div class="actions"><a class="btn" href="{% url 'campaign_list' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan sebagai Draft</button></div>
+</form>
+{% endblock %}

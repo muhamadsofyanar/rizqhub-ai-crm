@@ -1,18 +1,104 @@
 {% extends 'crm/base.html' %}
-{% block title %}{{ broadcast.name }} — Broadcast{% endblock %}
+{% block title %}{{ broadcast.name }} — Promosi WhatsApp{% endblock %}
 {% block topbar %}Detail Broadcast{% endblock %}
-{% block topbar_subtitle %}Tinjau penerima sebelum mengirim{% endblock %}
-{% block help_title %}Konfirmasi Broadcast{% endblock %}
-{% block help_content %}<p>Periksa device, pesan, jumlah penerima, dan daftar tujuan. Ketik <strong>KIRIM</strong> hanya setelah semuanya benar. Antrean yang belum terkirim dapat dibatalkan.</p>{% endblock %}
+{% block topbar_subtitle %}Ringkasan, progres, dan hasil setiap tujuan{% endblock %}
+{% block help_title %}Memahami Status Broadcast{% endblock %}
+{% block help_content %}
+<ul>
+  <li><strong>Draft:</strong> belum ada pesan yang dikirim.</li>
+  <li><strong>Antrean:</strong> penerima menunggu giliran sesuai delay.</li>
+  <li><strong>Berjalan:</strong> worker mengirim bertahap.</li>
+  <li><strong>Terkirim:</strong> StarSender menerima permintaan kirim.</li>
+  <li><strong>Tidak pasti:</strong> jangan kirim ulang sebelum mengecek WhatsApp.</li>
+</ul>
+{% endblock %}
 {% block content %}
-<div class="page-head"><div><div class="eyebrow">{{ broadcast.get_target_type_display }}</div><h2>{{ broadcast.name }}</h2><p>{{ broadcast.device }} · Delay {{ broadcast.delay_seconds }} detik{% if broadcast.scheduled_at %} · {{ broadcast.scheduled_at|date:'d M Y H:i' }}{% endif %}</p></div><span class="badge {% if broadcast.status == 'completed' %}badge-green{% elif broadcast.status == 'failed' %}badge-red{% elif broadcast.status == 'draft' %}badge-gray{% else %}badge-yellow{% endif %}">{{ broadcast.get_status_display }}</span></div>
-{% if not feature_enabled %}<div class="alert alert-warning">Pengiriman {{ broadcast.get_target_type_display|lower }} belum diaktifkan. Draft aman dan tidak akan berjalan sampai Owner mengaktifkannya melalui menu <a href="{% url 'feature_settings' %}"><strong>Fitur</strong></a>.</div>{% endif %}
-<div class="grid grid-4"><div class="card stat"><div class="stat-label">Total tujuan</div><div class="stat-value">{{ broadcast.total_count }}</div></div><div class="card stat"><div class="stat-label">Terkirim</div><div class="stat-value metric-good">{{ broadcast.sent_count }}</div></div><div class="card stat"><div class="stat-label">Gagal</div><div class="stat-value {% if broadcast.failed_count %}metric-bad{% endif %}">{{ broadcast.failed_count }}</div></div><div class="card stat"><div class="stat-label">Dilewati</div><div class="stat-value">{{ broadcast.skipped_count }}</div></div></div>
-<div class="grid grid-2 mt-2">
-  <section class="card card-pad"><h3 class="mt-0">Preview Pesan</h3><div class="surface-soft" style="white-space:pre-wrap">{{ broadcast.body|default:'(tanpa teks)' }}</div>{% if broadcast.file_url %}<p><a class="btn btn-sm" href="{{ broadcast.file_url }}" target="_blank" rel="noopener">Buka media</a></p>{% endif %}</section>
-  <section class="card card-pad"><h3 class="mt-0">Pemeriksaan Keamanan</h3><div class="setup-list"><div class="setup-item done"><span class="setup-icon">✓</span><span>Draft dibuat dan penerima dibekukan</span></div><div class="setup-item done"><span class="setup-icon">✓</span><span>Delay {{ broadcast.delay_seconds }} detik per tujuan</span></div><div class="setup-item {% if feature_enabled %}done{% endif %}"><span class="setup-icon">{% if feature_enabled %}✓{% else %}!{% endif %}</span><span>Fitur pengiriman {% if feature_enabled %}aktif{% else %}belum aktif{% endif %}</span></div></div></section>
+<div class="page-head">
+  <div><a class="back-link" href="{% url 'broadcast_list' %}">← Kembali ke Promosi WhatsApp</a><div class="eyebrow mt-2">{{ broadcast.get_target_type_display }}</div><h2>{{ broadcast.name }}</h2><p>{{ broadcast.device }} · Dibuat {{ broadcast.created_at|date:'d M Y H:i' }}{% if broadcast.created_by %} oleh {{ broadcast.created_by.username }}{% endif %}</p></div>
+  <span id="broadcastStatusBadge" class="badge badge-lg {% if broadcast.status == 'completed' %}badge-green{% elif broadcast.status == 'failed' %}badge-red{% elif broadcast.status == 'running' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}badge-yellow{% else %}badge-gray{% endif %}">{{ broadcast.get_status_display }}</span>
 </div>
-<section class="card mt-2"><div class="card-head"><div><h3>Daftar Penerima</h3><small class="muted">Periksa nama dan tujuan sebelum konfirmasi.</small></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Tujuan</th><th>Status</th><th>Percobaan</th><th class="advanced-only">Error</th></tr></thead><tbody>{% for recipient in recipients %}<tr><td><strong>{{ recipient.display_name }}</strong><br><span class="muted">{{ recipient.external_target }}</span></td><td><span class="badge {% if recipient.status == 'sent' %}badge-green{% elif recipient.status == 'failed' or recipient.status == 'uncertain' %}badge-red{% else %}badge-gray{% endif %}">{{ recipient.get_status_display }}</span></td><td>{{ recipient.attempts }}</td><td class="advanced-only">{{ recipient.error|truncatechars:120 }}</td></tr>{% empty %}<tr><td colspan="4" class="empty">Tidak ada penerima.</td></tr>{% endfor %}</tbody></table></div></section>
-{% if broadcast.status == 'draft' or broadcast.status == 'failed' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}<section class="card card-pad mt-2"><h3 class="mt-0">Konfirmasi Pengiriman</h3><p>Pastikan seluruh data benar. Ketik <strong>KIRIM</strong> persis untuk menjalankan atau menjadwalkan antrean.</p><form method="post" action="{% url 'broadcast_start' broadcast.pk %}">{% csrf_token %}<div class="form-row"><input class="form-control" name="confirm" autocomplete="off" placeholder="Ketik KIRIM"></div><button class="btn btn-primary" type="submit" {% if not feature_enabled %}disabled{% endif %}>Konfirmasi & Mulai</button></form></section>{% endif %}
-{% if broadcast.status == 'running' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}<form class="mt-2" method="post" action="{% url 'broadcast_cancel' broadcast.pk %}">{% csrf_token %}<button class="btn btn-danger" type="submit">Batalkan tujuan yang belum terkirim</button></form>{% endif %}
+
+{% if not feature_enabled %}<div class="alert alert-warning"><strong>Pengiriman masih terkunci.</strong> Draft dan daftar penerima aman, tetapi tidak akan dikirim sampai fitur {{ broadcast.get_target_type_display|lower }} diaktifkan pada menu <a href="{% url 'feature_settings' %}">Fitur</a>.</div>{% endif %}
+{% if broadcast.metadata.error %}<div class="alert alert-error"><strong>Broadcast gagal:</strong> {{ broadcast.metadata.error }}</div>{% endif %}
+
+<section class="card card-pad broadcast-overview">
+  <div class="broadcast-overview-main">
+    <div class="progress-heading"><div><strong id="progressText">{{ progress_percent }}% selesai</strong><small id="progressCount">{{ broadcast.sent_count|add:broadcast.failed_count|add:broadcast.skipped_count }} dari {{ broadcast.total_count }} tujuan sudah diproses</small></div><span class="chat-live" id="broadcastLive"><span class="live-dot"></span> Memantau</span></div>
+    <div class="progress-track"><div id="progressBar" class="progress-fill" style="width:{{ progress_percent }}%"></div></div>
+    <div class="broadcast-status-legend"><span><i class="dot dot-blue"></i> Siap/antrean <strong id="queuedCount">{{ status_counts.queued|default:0 }}</strong></span><span><i class="dot dot-orange"></i> Mengirim <strong id="sendingCount">{{ status_counts.sending|default:0 }}</strong></span><span><i class="dot dot-green"></i> Terkirim <strong id="sentCount">{{ broadcast.sent_count }}</strong></span><span><i class="dot dot-red"></i> Gagal/tidak pasti <strong id="failedCount">{{ broadcast.failed_count }}</strong></span><span><i class="dot dot-gray"></i> Dilewati <strong id="skippedCount">{{ broadcast.skipped_count }}</strong></span></div>
+  </div>
+  <div class="broadcast-overview-meta">
+    <div><span>Jenis tujuan</span><strong>{{ broadcast.get_target_type_display }}</strong></div>
+    <div><span>Pesan</span><strong>{% if broadcast.file_url %}Media + teks{% else %}Teks{% endif %}</strong></div>
+    <div><span>Delay</span><strong>{{ broadcast.delay_seconds }} detik/tujuan</strong></div>
+    <div><span>Jadwal</span><strong>{% if broadcast.scheduled_at %}{{ broadcast.scheduled_at|date:'d M Y H:i' }}{% else %}Kirim sekarang{% endif %}</strong></div>
+    <div><span>Preset</span><strong>{{ broadcast.preset.name|default:'Pilihan manual' }}</strong></div>
+  </div>
+</section>
+
+<div class="grid grid-2 mt-2">
+  <section class="card card-pad"><div class="section-head-simple"><div><h3>Preview Pesan</h3><p>Isi final yang dikirim. Variabel personal akan diganti per kontak.</p></div></div><div class="message-preview-phone"><div class="message-preview-bubble">{{ broadcast.body|default:'(tanpa teks)'|linebreaksbr }}{% if broadcast.file_url %}<div class="media-preview-link"><a href="{{ broadcast.file_url }}" target="_blank" rel="noopener">📎 Buka media</a></div>{% endif %}</div></div></section>
+  <section class="card card-pad"><div class="section-head-simple"><div><h3>Apa yang terjadi berikutnya?</h3><p>Penjelasan sesuai status saat ini.</p></div></div>
+    <div class="status-explanation">
+      {% if broadcast.status == 'draft' %}<strong>Draft belum mengirim apa pun.</strong><p>Periksa preview dan penerima di bawah. Setelah benar, ketik KIRIM.</p>
+      {% elif broadcast.status == 'scheduled' %}<strong>Menunggu jadwal.</strong><p>Antrean akan dimulai otomatis pada waktu yang ditentukan.</p>
+      {% elif broadcast.status == 'queued' %}<strong>Menunggu worker.</strong><p>Broadcast sudah masuk antrean dan segera berubah menjadi Berjalan.</p>
+      {% elif broadcast.status == 'running' %}<strong>Sedang dikirim bertahap.</strong><p>Status penerima diperbarui otomatis. Jangan membuat broadcast duplikat.</p>
+      {% elif broadcast.status == 'completed' %}<strong>Semua tujuan sudah diproses.</strong><p>Periksa tujuan gagal, tidak pasti, atau dilewati sebelum mengambil tindakan.</p>
+      {% elif broadcast.status == 'failed' %}<strong>Proses berhenti karena kesalahan.</strong><p>Baca pesan error dan periksa Device Key atau koneksi device.</p>
+      {% else %}<strong>Broadcast telah dihentikan.</strong><p>Tujuan yang belum terkirim tidak akan diproses.</p>{% endif %}
+    </div>
+  </section>
+</div>
+
+<section class="card card-pad mt-2">
+  <div class="section-head-simple"><div><h3>Daftar Tujuan</h3><p>Cari grup/nomor dan filter status. Status diperbarui otomatis saat proses berjalan.</p></div></div>
+  <form method="get" class="growth-filter-bar">
+    <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Cari nama, nomor, ID grup, atau error">
+    <select class="form-control" name="status"><option value="">Semua status</option><option value="queued" {% if selected_status == 'queued' %}selected{% endif %}>Antrean</option><option value="sending" {% if selected_status == 'sending' %}selected{% endif %}>Mengirim</option><option value="sent" {% if selected_status == 'sent' %}selected{% endif %}>Terkirim</option><option value="failed" {% if selected_status == 'failed' %}selected{% endif %}>Gagal</option><option value="uncertain" {% if selected_status == 'uncertain' %}selected{% endif %}>Tidak pasti</option><option value="skipped" {% if selected_status == 'skipped' %}selected{% endif %}>Dilewati</option><option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Dibatalkan</option></select>
+    <button class="btn" type="submit">Tampilkan</button>
+  </form>
+  <div class="recipient-table-wrap"><table class="table recipient-table"><thead><tr><th>Tujuan</th><th>Status</th><th>Waktu terkirim</th><th>Percobaan</th><th>Keterangan</th></tr></thead><tbody>{% for recipient in recipients %}<tr data-recipient-id="{{ recipient.id }}"><td><strong>{{ recipient.display_name }}</strong><br><span class="muted mono-small">{{ recipient.external_target }}</span></td><td><span data-field="status" class="badge {% if recipient.status == 'sent' %}badge-green{% elif recipient.status == 'failed' or recipient.status == 'uncertain' %}badge-red{% elif recipient.status == 'sending' or recipient.status == 'queued' %}badge-yellow{% else %}badge-gray{% endif %}">{% if broadcast.status == 'draft' and recipient.status == 'queued' %}Siap dikirim{% else %}{{ recipient.get_status_display }}{% endif %}</span></td><td data-field="sent_at">{{ recipient.sent_at|date:'d M H:i:s'|default:'—' }}</td><td data-field="attempts">{{ recipient.attempts }}</td><td data-field="error" class="recipient-error">{% if recipient.error %}{{ recipient.error|truncatechars:180 }}{% elif recipient.status == 'queued' and broadcast.status == 'draft' %}<span class="muted">Belum dikirim. Menunggu konfirmasi KIRIM.</span>{% elif recipient.status == 'queued' %}<span class="muted">Menunggu giliran sesuai delay.</span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Tidak ada tujuan yang sesuai filter.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+{% if broadcast.status == 'draft' or broadcast.status == 'failed' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}
+<section class="card card-pad mt-2 confirmation-card"><div><h3>Konfirmasi Pengiriman</h3><p>Pastikan device, isi pesan, dan seluruh tujuan sudah benar. Ketik <strong>KIRIM</strong> untuk memulai.</p></div><form method="post" action="{% url 'broadcast_start' broadcast.pk %}">{% csrf_token %}<input class="form-control confirm-input" name="confirm" autocomplete="off" placeholder="Ketik KIRIM"><button class="btn btn-primary" type="submit" {% if not feature_enabled %}disabled{% endif %}>Mulai Broadcast</button></form></section>
+{% endif %}
+{% if broadcast.status == 'running' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}<form class="mt-2 text-right" method="post" action="{% url 'broadcast_cancel' broadcast.pk %}" onsubmit="return confirm('Batalkan semua tujuan yang belum terkirim?')">{% csrf_token %}<button class="btn btn-danger" type="submit">Batalkan Tujuan yang Belum Terkirim</button></form>{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if broadcast.status == 'running' or broadcast.status == 'queued' or broadcast.status == 'scheduled' %}
+<script>
+(() => {
+  const api = "{% url 'broadcast_status_api' broadcast.pk %}";
+  const labels = {queued:'Antrean',sending:'Mengirim',sent:'Terkirim',failed:'Gagal',uncertain:'Tidak pasti',cancelled:'Dibatalkan',skipped:'Dilewati'};
+  const badgeClass = status => status === 'sent' ? 'badge badge-green' : ['failed','uncertain'].includes(status) ? 'badge badge-red' : ['queued','sending'].includes(status) ? 'badge badge-yellow' : 'badge badge-gray';
+  async function refresh() {
+    try {
+      const response = await fetch(api,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});
+      if(!response.ok) throw new Error('HTTP '+response.status);
+      const data = await response.json();
+      document.getElementById('progressBar').style.width = `${data.progress_percent}%`;
+      document.getElementById('progressText').textContent = `${data.progress_percent}% selesai`;
+      document.getElementById('progressCount').textContent = `${data.sent_count + data.failed_count + data.skipped_count} dari ${data.total_count} tujuan sudah diproses`;
+      document.getElementById('queuedCount').textContent = data.status_counts.queued || 0;
+      document.getElementById('sendingCount').textContent = data.status_counts.sending || 0;
+      document.getElementById('sentCount').textContent = data.sent_count;
+      document.getElementById('failedCount').textContent = data.failed_count;
+      document.getElementById('skippedCount').textContent = data.skipped_count;
+      const topBadge = document.getElementById('broadcastStatusBadge'); topBadge.textContent=data.status_label;
+      data.recipients.forEach(item => {
+        const row=document.querySelector(`[data-recipient-id="${item.id}"]`); if(!row)return;
+        const status=row.querySelector('[data-field="status"]'); status.textContent=labels[item.status]||item.status; status.className=badgeClass(item.status);
+        row.querySelector('[data-field="attempts"]').textContent=item.attempts;
+        row.querySelector('[data-field="error"]').textContent=item.error|| (item.status==='queued'?'Menunggu giliran sesuai delay.':'—');
+      });
+      if(['completed','failed','cancelled'].includes(data.status)) window.setTimeout(()=>window.location.reload(),1200);
+      else window.setTimeout(refresh,4000);
+    } catch(error) { const live=document.getElementById('broadcastLive'); live.textContent='Pembaruan terputus'; live.className='conversation-status status-help'; window.setTimeout(refresh,10000); }
+  }
+  window.setTimeout(refresh,1500);
+})();
+</script>
+{% endif %}
 {% endblock %}
