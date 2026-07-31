@@ -13,7 +13,7 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.core.cache import cache
 from django.db import connection as db_connection
 from django.db.models import Count, OuterRef, Q, Subquery, Sum
-from django.http import Http404, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -27,6 +27,7 @@ from .forms import (
     AgentTestForm,
     AutomationRuleForm,
     BroadcastForm,
+    BroadcastTemplateForm,
     CampaignForm,
     GroupCategoryForm,
     GroupPresetForm,
@@ -51,6 +52,7 @@ from .models import (
     AutomationRule,
     AutomationRun,
     Broadcast,
+    BroadcastTemplate,
     BroadcastRecipient,
     BackupRecord,
     Campaign,
@@ -59,6 +61,7 @@ from .models import (
     FeatureFlag,
     GroupCategory,
     GroupPreset,
+    GroupPresetMember,
     Conversation,
     Deal,
     KnowledgeEntry,
@@ -1356,7 +1359,7 @@ def starsender_center(request):
     )
     groups = WhatsAppGroup.objects.filter(tenant=request.tenant)
     account_exists = accounts.exists()
-    account_tested = accounts.filter(last_sync_status="connection_ok").exists()
+    account_tested = accounts.filter(last_sync_status__in=["connection_ok", "success"]).exists()
     devices_exist = devices.exists()
     mapped_devices = devices.filter(
         brand__isnull=False, agent__isnull=False, encrypted_device_key__gt=""
@@ -1423,11 +1426,12 @@ def starsender_account_edit(request, pk):
 def starsender_account_test(request, pk):
     account = get_object_or_404(StarSenderAccount, pk=pk, tenant=request.tenant)
     try:
-        result = test_account(account)
-        account.last_sync_status = "connection_ok"
-        account.last_error = ""
-        account.save(update_fields=["last_sync_status", "last_error", "updated_at"])
-        messages.success(request, f"Koneksi akun berhasil: {result.get('message', 'OK')}")
+        result = sync_devices(account)
+        account.refresh_from_db()
+        messages.success(
+            request,
+            f"Account API Key valid. {result['total']} device terbaca dan sudah disinkronkan.",
+        )
     except Exception as exc:
         account.last_sync_status = "failed"
         account.last_error = str(exc)[:4000]
@@ -1508,13 +1512,43 @@ def starsender_device_groups_sync(request, pk):
     device = get_object_or_404(StarSenderDevice, pk=pk, tenant=request.tenant)
     try:
         result = sync_groups(device)
-        messages.success(
-            request,
-            f"Grup disinkronkan: {result['created']} baru, {result['updated']} diperbarui, total {result['total']}.",
-        )
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"ok": True, **result})
+        if result.get("warning"):
+            messages.warning(request, result["warning"])
+        else:
+            messages.success(
+                request,
+                f"Grup disinkronkan: {result['created']} baru, {result['updated']} diperbarui, total {result['total']}.",
+            )
     except Exception as exc:
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
         messages.error(request, f"Sinkronisasi grup gagal: {exc}")
     return redirect("starsender_device_groups", pk=device.pk)
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def whatsapp_group_list(request):
+    groups = WhatsAppGroup.objects.filter(tenant=request.tenant).select_related(
+        "device", "device__brand"
+    ).prefetch_related("category_links__category")
+    device_id = (request.GET.get("device") or "").strip()
+    query = (request.GET.get("q") or "").strip()
+    if device_id:
+        groups = groups.filter(device_id=device_id)
+    if query:
+        groups = groups.filter(
+            Q(name__icontains=query)
+            | Q(external_group_id__icontains=query)
+            | Q(category_links__category__name__icontains=query)
+        ).distinct()
+    devices = StarSenderDevice.objects.filter(tenant=request.tenant).order_by("name", "phone_number")
+    return render(
+        request,
+        "crm/whatsapp_group_list.html",
+        {"groups": groups, "devices": devices, "selected_device": device_id, "query": query},
+    )
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1614,7 +1648,7 @@ def group_preset_create(request):
         )
         messages.success(request, "Preset grup dibuat.")
         return redirect("group_preset_list")
-    return render(request, "crm/form.html", {"form": form, "title": "Buat preset grup", "subtitle": "Preset statis menyimpan grup tertentu; preset dinamis mengikuti kategori."})
+    return render(request, "crm/group_preset_form.html", {"form": form, "title": "Buat preset grup"})
 
 
 @roles_required("owner", "admin", "manager", "marketing")
@@ -1631,7 +1665,7 @@ def group_preset_edit(request, pk):
         )
         messages.success(request, "Preset grup diperbarui.")
         return redirect("group_preset_list")
-    return render(request, "crm/form.html", {"form": form, "title": f"Edit preset — {preset.name}", "subtitle": "Seluruh tujuan akan ditampilkan kembali sebelum pengiriman."})
+    return render(request, "crm/group_preset_form.html", {"form": form, "title": f"Edit preset — {preset.name}", "preset": preset})
 
 
 def _preset_groups(preset, device):
@@ -1656,6 +1690,183 @@ def _preset_groups(preset, device):
 
 
 @roles_required("owner", "admin", "manager", "marketing")
+@require_GET
+def broadcast_groups_api(request):
+    device_id = request.GET.get("device", "").strip()
+    if not device_id:
+        return JsonResponse({"ok": True, "groups": [], "presets": []})
+    device = get_object_or_404(StarSenderDevice, pk=device_id, tenant=request.tenant)
+    groups = WhatsAppGroup.objects.filter(
+        tenant=request.tenant,
+        device=device,
+        is_active=True,
+        is_locked=False,
+    ).prefetch_related("category_links__category")
+    group_rows = [
+        {
+            "id": str(group.id),
+            "name": group.name,
+            "external_id": group.external_group_id,
+            "categories": [link.category.name for link in group.category_links.all()],
+        }
+        for group in groups
+    ]
+    preset_rows = []
+    for preset in GroupPreset.objects.filter(tenant=request.tenant, is_active=True).select_related("category"):
+        selected = list(_preset_groups(preset, device).values_list("id", flat=True))
+        if selected:
+            preset_rows.append(
+                {
+                    "id": str(preset.id),
+                    "name": preset.name,
+                    "type": preset.preset_type,
+                    "group_ids": [str(value) for value in selected],
+                    "count": len(selected),
+                }
+            )
+    return JsonResponse(
+        {
+            "ok": True,
+            "device": {"id": str(device.id), "name": str(device)},
+            "groups": group_rows,
+            "presets": preset_rows,
+            "sync_url": reverse("starsender_device_groups_sync", args=[device.id]),
+            "manage_url": reverse("starsender_device_groups", args=[device.id]),
+        }
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_GET
+def broadcast_template_api(request, pk):
+    template = get_object_or_404(BroadcastTemplate, pk=pk, tenant=request.tenant, is_active=True)
+    media_url = template.media_url
+    if not media_url and template.media_file:
+        media_url = request.build_absolute_uri(
+            reverse("broadcast_template_media", args=[template.public_token])
+        )
+    return JsonResponse(
+        {
+            "ok": True,
+            "id": str(template.id),
+            "name": template.name,
+            "message_type": template.message_type,
+            "body": template.body,
+            "media_url": media_url,
+        }
+    )
+
+
+def broadcast_template_media(request, token):
+    template = get_object_or_404(BroadcastTemplate, public_token=token, is_active=True)
+    if not template.media_file:
+        raise Http404("Media tidak tersedia")
+    response = FileResponse(template.media_file.open("rb"), content_type="application/octet-stream")
+    response["Content-Disposition"] = f'inline; filename="{template.media_file.name.rsplit("/", 1)[-1]}"'
+    response["Cache-Control"] = "public, max-age=300"
+    response["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_template_list(request):
+    templates = BroadcastTemplate.objects.filter(tenant=request.tenant)
+    return render(request, "crm/broadcast_templates.html", {"templates": templates})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_template_create(request):
+    form = BroadcastTemplateForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        template = form.save(commit=False)
+        template.tenant = request.tenant
+        template.created_by = request.user
+        template.save()
+        log_audit(tenant=request.tenant, action="broadcast.template.create", request=request, obj=template)
+        messages.success(request, "Template pesan disimpan dan siap digunakan.")
+        return redirect("broadcast_template_list")
+    return render(request, "crm/broadcast_template_form.html", {"form": form, "title": "Buat template pesan"})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_template_edit(request, pk):
+    template = get_object_or_404(BroadcastTemplate, pk=pk, tenant=request.tenant)
+    form = BroadcastTemplateForm(request.POST or None, request.FILES or None, instance=template)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        log_audit(tenant=request.tenant, action="broadcast.template.update", request=request, obj=template)
+        messages.success(request, "Template pesan diperbarui.")
+        return redirect("broadcast_template_list")
+    return render(request, "crm/broadcast_template_form.html", {"form": form, "title": f"Edit template — {template.name}", "template": template})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def group_preset_quick_create(request):
+    name = (request.POST.get("name") or "").strip()
+    device_id = (request.POST.get("device") or "").strip()
+    group_ids = request.POST.getlist("groups")
+    if not name:
+        return JsonResponse({"ok": False, "error": "Nama preset wajib diisi."}, status=400)
+    device = get_object_or_404(StarSenderDevice, pk=device_id, tenant=request.tenant)
+    groups = list(
+        WhatsAppGroup.objects.filter(
+            tenant=request.tenant,
+            device=device,
+            id__in=group_ids,
+            is_active=True,
+            is_locked=False,
+        )
+    )
+    if not groups:
+        return JsonResponse({"ok": False, "error": "Pilih minimal satu grup."}, status=400)
+    if GroupPreset.objects.filter(tenant=request.tenant, name__iexact=name).exists():
+        return JsonResponse({"ok": False, "error": "Nama preset sudah digunakan."}, status=409)
+    preset = GroupPreset.objects.create(
+        tenant=request.tenant,
+        name=name,
+        description=f"Preset cepat untuk {device}",
+        preset_type="static",
+        brand=device.brand,
+        created_by=request.user,
+        is_active=True,
+    )
+    GroupPresetMember.objects.bulk_create(
+        [GroupPresetMember(tenant=request.tenant, preset=preset, group=group) for group in groups],
+        ignore_conflicts=True,
+    )
+    log_audit(tenant=request.tenant, action="starsender.group_preset.quick_create", request=request, obj=preset, metadata={"groups": len(groups)})
+    return JsonResponse({"ok": True, "id": str(preset.id), "name": preset.name, "count": len(groups)})
+
+
+@roles_required("owner", "admin")
+@require_POST
+def starsender_sync_all_groups(request):
+    devices = StarSenderDevice.objects.filter(
+        tenant=request.tenant,
+        group_sync_enabled=True,
+    ).exclude(encrypted_device_key="")
+    total = created = updated = failed = 0
+    errors = []
+    for device in devices:
+        try:
+            result = sync_groups(device)
+            total += result["total"]
+            created += result["created"]
+            updated += result["updated"]
+            if result.get("warning"):
+                errors.append(f"{device}: {result['warning']}")
+        except Exception as exc:
+            failed += 1
+            errors.append(f"{device}: {exc}")
+    if errors:
+        messages.warning(request, f"Sinkronisasi selesai dengan {len(errors)} catatan. Total grup terbaca: {total}. " + " | ".join(errors[:3]))
+    else:
+        messages.success(request, f"Semua grup disinkronkan. {created} baru, {updated} diperbarui, total {total}.")
+    return redirect("starsender_center")
+
+
+@roles_required("owner", "admin", "manager", "marketing")
 def broadcast_list(request):
     broadcasts = Broadcast.objects.filter(tenant=request.tenant).select_related("device", "preset")
     return render(request, "crm/broadcast_list.html", {"broadcasts": broadcasts})
@@ -1669,6 +1880,22 @@ def broadcast_create(request):
         broadcast.tenant = request.tenant
         broadcast.created_by = request.user
         broadcast.status = "draft"
+        selected_template = form.cleaned_data.get("template")
+        if selected_template:
+            # Body remains editable. Use the template only when the field was left blank.
+            if not (broadcast.body or "").strip():
+                broadcast.body = selected_template.body
+            if broadcast.message_type == "media" and not broadcast.file_url:
+                if selected_template.media_url:
+                    broadcast.file_url = selected_template.media_url
+                elif selected_template.media_file:
+                    broadcast.file_url = request.build_absolute_uri(
+                        reverse("broadcast_template_media", args=[selected_template.public_token])
+                    )
+            BroadcastTemplate.objects.filter(pk=selected_template.pk).update(
+                usage_count=selected_template.usage_count + 1,
+                last_used_at=timezone.now(),
+            )
         broadcast.metadata = {
             "consent_confirmed": bool(form.cleaned_data.get("confirm_consent")),
             "group_permission_confirmed": bool(form.cleaned_data.get("confirm_group_permission")),
@@ -1753,7 +1980,15 @@ def broadcast_create(request):
         )
         messages.success(request, "Broadcast disimpan sebagai draft. Tinjau semua penerima sebelum mengetik KIRIM.")
         return redirect("broadcast_detail", pk=broadcast.pk)
-    return render(request, "crm/broadcast_form.html", {"form": form})
+    return render(
+        request,
+        "crm/broadcast_form.html",
+        {
+            "form": form,
+            "personal_enabled": feature_enabled(request.tenant, "personal_broadcast", False),
+            "group_enabled": feature_enabled(request.tenant, "group_broadcast", False),
+        },
+    )
 
 
 @roles_required("owner", "admin", "manager", "marketing")

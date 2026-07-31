@@ -52,6 +52,9 @@ required_routes = [
     "group_preset_create",
     "group_category_edit",
     "broadcast_start",
+    "broadcast_groups_api",
+    "broadcast_template_create",
+    "whatsapp_group_list",
     "feature_toggle",
 ]
 for name in required_routes:
@@ -71,6 +74,7 @@ for model in [
     "WhatsAppGroup",
     "GroupPreset",
     "Broadcast",
+    "BroadcastTemplate",
     "BroadcastRecipient",
 ]:
     if f"class {model}(" not in models:

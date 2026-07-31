@@ -1,3 +1,12 @@
+# V4.2 Organic Broadcast
+
+- Memperbaiki koneksi Account API Key dan sinkronisasi device.
+- Memperbaiki normalisasi status disconnected.
+- Menambah sinkronisasi semua grup dan daftar grup lintas device.
+- Menambah pemilih grup visual, multi-group, preset cepat, dan pencarian grup.
+- Menambah template teks/media tanpa batas aplikasi dengan upload media persistent.
+- Menambah UI broadcast yang sederhana dan fokus pada pemasaran organik.
+
 # Changelog
 
 ## 4.1.0 — Simple Operations UX

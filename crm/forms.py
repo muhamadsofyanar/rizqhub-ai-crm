@@ -11,6 +11,7 @@ from .models import (
     AgentRuntimePolicy,
     AutomationRule,
     Broadcast,
+    BroadcastTemplate,
     Brand,
     Campaign,
     Contact,
@@ -572,7 +573,7 @@ class GroupPresetForm(StyledFormMixin, forms.ModelForm):
     groups = forms.ModelMultipleChoiceField(
         queryset=WhatsAppGroup.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"size": 14}),
+        widget=forms.CheckboxSelectMultiple(),
         label="Grup preset statis",
     )
 
@@ -589,7 +590,7 @@ class GroupPresetForm(StyledFormMixin, forms.ModelForm):
             tenant=tenant, is_active=True
         )
         self.fields["groups"].queryset = WhatsAppGroup.objects.filter(
-            tenant=tenant, is_active=True
+            tenant=tenant, is_active=True, is_locked=False
         ).select_related("device")
         if self.instance.pk:
             self.fields["groups"].initial = [
@@ -623,7 +624,58 @@ class GroupPresetForm(StyledFormMixin, forms.ModelForm):
         return obj
 
 
+class BroadcastTemplateForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = BroadcastTemplate
+        fields = ["name", "category", "message_type", "body", "media_file", "media_url", "is_active"]
+        widgets = {
+            "body": forms.Textarea(attrs={"rows": 10, "placeholder": "Tulis isi pesan..."}),
+        }
+        labels = {
+            "name": "Nama template",
+            "category": "Kategori",
+            "message_type": "Jenis template",
+            "body": "Isi pesan",
+            "media_file": "Upload media",
+            "media_url": "Atau URL media",
+            "is_active": "Template aktif",
+        }
+        help_texts = {
+            "category": "Contoh: Promo legalitas, Edukasi, Event, Follow-up.",
+            "body": "Boleh menggunakan {{name}}, {{phone}}, {{email}}, dan {{company}} untuk personalisasi kontak.",
+            "media_file": "File disimpan di volume media dan dibuka melalui URL token acak untuk StarSender.",
+            "media_url": "Opsional bila media sudah tersedia pada URL HTTPS publik.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._style()
+
+    def clean(self):
+        data = super().clean()
+        message_type = data.get("message_type")
+        body = (data.get("body") or "").strip()
+        media_file = data.get("media_file") or getattr(self.instance, "media_file", None)
+        media_url = (data.get("media_url") or "").strip()
+        if message_type == "text" and not body:
+            self.add_error("body", "Isi pesan wajib untuk template teks.")
+        uploaded = data.get("media_file")
+        if uploaded and getattr(uploaded, "size", 0) > 25 * 1024 * 1024:
+            self.add_error("media_file", "Ukuran media maksimal 25 MB untuk menjaga penyimpanan dan pengiriman stabil.")
+        if media_url and not media_url.lower().startswith("https://"):
+            self.add_error("media_url", "URL media harus menggunakan HTTPS.")
+        if message_type == "media" and not media_file and not media_url:
+            self.add_error("media_file", "Upload media atau isi URL media.")
+        return data
+
+
 class BroadcastForm(StyledFormMixin, forms.ModelForm):
+    template = forms.ModelChoiceField(
+        queryset=BroadcastTemplate.objects.none(),
+        required=False,
+        label="Template pesan",
+        help_text="Opsional. Pilih template lalu isi masih dapat diedit sebelum disimpan.",
+    )
     message_type = forms.ChoiceField(choices=[("text", "Teks"), ("media", "Media")])
     confirm_consent = forms.BooleanField(
         required=False,
@@ -648,7 +700,7 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
     groups = forms.ModelMultipleChoiceField(
         queryset=WhatsAppGroup.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"size": 14}),
+        widget=forms.SelectMultiple(attrs={"size": 14, "class": "form-control js-native-groups"}),
         label="Grup tujuan",
     )
 
@@ -687,6 +739,9 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
             tenant=tenant, send_enabled=True
         ).select_related("account")
         self.fields["preset"].queryset = GroupPreset.objects.filter(
+            tenant=tenant, is_active=True
+        )
+        self.fields["template"].queryset = BroadcastTemplate.objects.filter(
             tenant=tenant, is_active=True
         )
         self.fields["contacts"].queryset = Contact.objects.filter(
@@ -745,8 +800,12 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
         delay = data.get("delay_seconds") or 0
         if delay < 30:
             self.add_error("delay_seconds", "Delay minimal 30 detik untuk pengiriman massal yang lebih aman.")
-        if data.get("message_type") == "media" and not data.get("file_url"):
-            self.add_error("file_url", "URL file wajib untuk pesan media.")
-        if data.get("message_type") == "text" and not (data.get("body") or "").strip():
+        template = data.get("template")
+        template_has_media = bool(
+            template and (getattr(template, "media_file", None) or getattr(template, "media_url", ""))
+        )
+        if data.get("message_type") == "media" and not data.get("file_url") and not template_has_media:
+            self.add_error("file_url", "Pilih template media, upload media pada template, atau isi URL file.")
+        if data.get("message_type") == "text" and not (data.get("body") or "").strip() and not template:
             self.add_error("body", "Isi pesan wajib untuk pesan teks.")
         return data

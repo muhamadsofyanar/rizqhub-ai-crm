@@ -1,129 +1,180 @@
 {% extends 'crm/base.html' %}
-{% block title %}Buat Broadcast — RizqHub AI CRM{% endblock %}
-{% block topbar %}Buat Broadcast{% endblock %}
-{% block topbar_subtitle %}Wizard pengiriman aman{% endblock %}
-{% block help_title %}Wizard Broadcast{% endblock %}
-{% block help_content %}<p>Isi langkah secara berurutan. Tombol terakhir hanya membuat draft. Pesan baru dapat dikirim setelah Anda meninjau daftar penerima dan mengetik <strong>KIRIM</strong>.</p>{% endblock %}
+{% block title %}Buat Broadcast — RizqHub AI{% endblock %}
+{% block topbar %}Broadcast Organik{% endblock %}
+{% block topbar_subtitle %}Personal, satu grup, multi-grup, preset, teks, dan media{% endblock %}
+{% block help_title %}Cara aman menggunakan Broadcast{% endblock %}
+{% block help_content %}
+<p>Mulai dari device sendiri, sinkronkan grup, pilih tujuan, lalu simpan sebagai draft. Pesan baru dikirim setelah daftar tujuan ditinjau dan Anda mengetik <strong>KIRIM</strong>.</p>
+<p class="safety-box">Kirim hanya ke kontak yang memberikan izin atau grup tempat Anda memang berhak membagikan informasi. Gunakan jeda minimal 30 detik.</p>
+{% endblock %}
 {% block content %}
-<div class="page-head"><div><h2>Buat Broadcast</h2><p>Enam langkah sederhana. Tidak ada pesan yang dikirim dari halaman ini.</p></div><a class="btn" href="{% url 'broadcast_list' %}">Batal</a></div>
-{% if form.errors %}<div class="field-error-summary"><strong>Beberapa data belum benar.</strong><div>Periksa pesan merah pada setiap langkah sebelum menyimpan draft.</div>{{ form.non_field_errors }}</div>{% endif %}
-<form method="post" id="broadcastWizardForm">{% csrf_token %}
-  <div class="wizard-layout">
-    <aside class="card wizard-nav" id="wizardNav">
-      <button type="button" class="wizard-step-link active" data-step-link="1"><span class="wizard-number">1</span><span><strong>Tujuan</strong><small>Personal atau grup</small></span></button>
-      <button type="button" class="wizard-step-link" data-step-link="2"><span class="wizard-number">2</span><span><strong>Channel</strong><small>Pilih device</small></span></button>
-      <button type="button" class="wizard-step-link" data-step-link="3"><span class="wizard-number">3</span><span><strong>Penerima</strong><small>Kontak atau preset</small></span></button>
-      <button type="button" class="wizard-step-link" data-step-link="4"><span class="wizard-number">4</span><span><strong>Pesan</strong><small>Isi dan media</small></span></button>
-      <button type="button" class="wizard-step-link" data-step-link="5"><span class="wizard-number">5</span><span><strong>Jadwal & Izin</strong><small>Delay dan consent</small></span></button>
-      <button type="button" class="wizard-step-link" data-step-link="6"><span class="wizard-number">6</span><span><strong>Tinjau</strong><small>Simpan draft</small></span></button>
-    </aside>
-
-    <section class="card wizard-panel">
-      <div class="visually-hidden">{{ form.target_type }}{{ form.message_type }}</div>
-
-      <div class="wizard-step active" data-step="1">
-        <h3>Siapa yang akan menerima pesan?</h3><p>Pilih satu jenis tujuan. Anda dapat membuat broadcast lain untuk jenis yang berbeda.</p>
-        {{ form.target_type.errors }}
-        <div class="choice-cards">
-          <button class="choice-card" type="button" data-target-choice="personal"><input type="radio" tabindex="-1"><strong>Personal</strong><small>Kirim ke kontak CRM atau nomor manual yang memiliki consent.</small></button>
-          <button class="choice-card" type="button" data-target-choice="group"><input type="radio" tabindex="-1"><strong>Grup WhatsApp</strong><small>Pilih satu atau banyak grup, kategori, atau preset.</small></button>
-        </div>
-        <div class="wizard-actions"><span></span><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
-      </div>
-
-      <div class="wizard-step" data-step="2">
-        <h3>Pilih device pengiriman</h3><p>Pesan akan dikirim melalui nomor WhatsApp ini. Hanya device yang pengirimannya aktif yang ditampilkan.</p>
-        <div class="form-row"><label>{{ form.device.label }}</label>{{ form.device }}{{ form.device.errors }}<span class="helptext">Untuk grup, semua grup tujuan harus berasal dari device yang sama.</span></div>
-        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
-      </div>
-
-      <div class="wizard-step" data-step="3">
-        <h3>Pilih penerima</h3><p id="recipientHelp">Pilih kontak atau grup yang akan dimasukkan ke draft.</p>
-        <div id="personalRecipients">
-          <div class="grid grid-2"><div class="form-row"><label>{{ form.contacts.label }}</label>{{ form.contacts }}{{ form.contacts.errors }}<span class="helptext">Daftar hanya menampilkan kontak yang memiliki marketing consent.</span></div><div class="form-row"><label>{{ form.manual_numbers.label }}</label>{{ form.manual_numbers }}{{ form.manual_numbers.errors }}{% if form.manual_numbers.help_text %}<span class="helptext">{{ form.manual_numbers.help_text }}</span>{% endif %}</div></div>
-        </div>
-        <div id="groupRecipients">
-          <div class="form-row"><label>Preset tersimpan</label>{{ form.preset }}{{ form.preset.errors }}<span class="helptext">Opsional. Preset dapat digabungkan dengan pilihan grup manual.</span></div>
-          <div class="form-row"><label>{{ form.groups.label }}</label>{{ form.groups }}{{ form.groups.errors }}<span class="helptext">Gunakan Ctrl/Command untuk memilih lebih dari satu grup.</span></div>
-          <a class="btn btn-sm" href="{% url 'group_preset_list' %}" target="_blank">Kelola kategori & preset</a>
-        </div>
-        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
-      </div>
-
-      <div class="wizard-step" data-step="4">
-        <h3>Susun pesan</h3><p>Gunakan pesan yang jelas, relevan, dan tidak menyesatkan.</p>
-        <div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Nama internal agar broadcast mudah ditemukan.</span></div>
-        <div class="form-row"><label>Jenis pesan</label><div class="choice-cards"><button class="choice-card" type="button" data-message-choice="text"><input type="radio" tabindex="-1"><strong>Teks</strong><small>Pesan tanpa lampiran.</small></button><button class="choice-card" type="button" data-message-choice="media"><input type="radio" tabindex="-1"><strong>Media</strong><small>Pesan dengan URL file publik.</small></button></div>{{ form.message_type.errors }}</div>
-        <div class="form-row"><label>{{ form.body.label }}</label>{{ form.body }}{{ form.body.errors }}<span class="helptext">Preview final ditampilkan pada langkah terakhir.</span></div>
-        <div class="form-row" id="mediaField"><label>{{ form.file_url.label }}</label>{{ form.file_url }}{{ form.file_url.errors }}<span class="helptext">Gunakan URL HTTPS yang dapat dibuka tanpa login.</span></div>
-        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
-      </div>
-
-      <div class="wizard-step" data-step="5">
-        <h3>Atur jadwal dan keamanan</h3><p>Pengiriman bertahap membantu menjaga stabilitas device dan mengurangi risiko spam.</p>
-        <div class="grid grid-2"><div class="form-row"><label>{{ form.delay_seconds.label }}</label>{{ form.delay_seconds }}{{ form.delay_seconds.errors }}<span class="helptext">Minimal 30 detik antar tujuan.</span></div><div class="form-row"><label>{{ form.scheduled_at.label }}</label>{{ form.scheduled_at }}{{ form.scheduled_at.errors }}<span class="helptext">Kosongkan untuk menyiapkan pengiriman segera setelah konfirmasi.</span></div></div>
-        <div id="personalConsent" class="safety-box">{{ form.confirm_consent }} <label for="{{ form.confirm_consent.id_for_label }}">{{ form.confirm_consent.label }}</label>{{ form.confirm_consent.errors }}</div>
-        <div id="groupConsent" class="safety-box">{{ form.confirm_group_permission }} <label for="{{ form.confirm_group_permission.id_for_label }}">{{ form.confirm_group_permission.label }}</label>{{ form.confirm_group_permission.errors }}</div>
-        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Tinjau Draft</button></div>
-      </div>
-
-      <div class="wizard-step" data-step="6">
-        <h3>Tinjau draft</h3><p>Periksa kembali sebelum menyimpan. Halaman berikutnya akan menampilkan daftar penerima lengkap.</p>
-        <div class="surface-soft"><dl class="review-grid"><dt>Nama</dt><dd id="reviewName">—</dd><dt>Tujuan</dt><dd id="reviewTarget">—</dd><dt>Device</dt><dd id="reviewDevice">—</dd><dt>Penerima</dt><dd id="reviewRecipients">—</dd><dt>Jenis pesan</dt><dd id="reviewMessageType">—</dd><dt>Delay</dt><dd id="reviewDelay">—</dd><dt>Jadwal</dt><dd id="reviewSchedule">—</dd></dl></div>
-        <div class="surface-soft mt-2"><div class="eyebrow">Preview Pesan</div><div id="reviewBody" style="white-space:pre-wrap;margin-top:8px">—</div></div>
-        <div class="safety-box mt-2"><strong>Aman:</strong> tombol di bawah hanya menyimpan draft. Pesan belum dikirim.</div>
-        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button class="btn btn-primary" type="submit">Simpan Draft & Periksa Penerima</button></div>
-      </div>
-    </section>
+<style>
+  .broadcast-shell{max-width:1100px;margin:0 auto}.broadcast-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .wizard-progress{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:16px 0}.wizard-pill{border:1px solid var(--border,#dbe3ef);background:#fff;border-radius:12px;padding:10px;text-align:center;font-size:12px;color:#64748b}.wizard-pill.active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8;font-weight:700}.wizard-pill.done{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+  .broadcast-step{display:none}.broadcast-step.active{display:block}.target-grid,.message-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.select-card{border:2px solid #e2e8f0;border-radius:16px;padding:18px;cursor:pointer;background:#fff;text-align:left}.select-card.selected{border-color:#2563eb;background:#eff6ff}.select-card strong{display:block;font-size:16px}.select-card small{display:block;color:#64748b;margin-top:5px}
+  .group-toolbar{display:grid;grid-template-columns:1fr 220px auto;gap:10px;align-items:center}.group-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:420px;overflow:auto;padding:2px}.group-card{display:flex;gap:10px;align-items:flex-start;border:1px solid #dbe3ef;border-radius:12px;padding:12px;background:#fff;cursor:pointer}.group-card.selected{border-color:#2563eb;background:#eff6ff}.group-card input{margin-top:3px}.group-card small{display:block;color:#64748b;margin-top:3px}.group-empty{padding:30px;text-align:center;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc}.selected-bar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;background:#eff6ff;border-radius:12px;margin:10px 0}.native-groups-wrap{display:none}.preview-box{white-space:pre-wrap;background:#f8fafc;border:1px solid #dbe3ef;border-radius:14px;padding:16px;min-height:100px}.template-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}.wizard-actions{display:flex;justify-content:space-between;gap:12px;margin-top:22px}.field-errors,.errorlist{color:#b91c1c;margin:6px 0;padding-left:18px}.setup-warning{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px;margin-bottom:14px}.status-row{display:flex;gap:8px;flex-wrap:wrap}.status-chip{border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}.status-on{background:#dcfce7;color:#166534}.status-off{background:#fee2e2;color:#991b1b}
+  @media(max-width:800px){.wizard-progress{grid-template-columns:1fr}.target-grid,.message-grid,.group-grid{grid-template-columns:1fr}.group-toolbar{grid-template-columns:1fr}.wizard-pill:not(.active){display:none}}
+</style>
+<div class="broadcast-shell">
+  <div class="page-head">
+    <div><h2>Buat Broadcast</h2><p>Pilih tujuan dengan jelas. Semua pesan disimpan sebagai draft sebelum dikirim.</p></div>
+    <div class="broadcast-tabs"><a class="btn" href="{% url 'broadcast_list' %}">Riwayat</a><a class="btn" href="{% url 'broadcast_template_list' %}">Template</a><a class="btn" href="{% url 'group_preset_list' %}">Preset Grup</a><a class="btn" href="{% url 'whatsapp_group_list' %}">Daftar Grup</a></div>
   </div>
-</form>
+
+  <div class="status-row">
+    <span class="status-chip {% if personal_enabled %}status-on{% else %}status-off{% endif %}">Personal {% if personal_enabled %}aktif{% else %}belum diaktifkan{% endif %}</span>
+    <span class="status-chip {% if group_enabled %}status-on{% else %}status-off{% endif %}">Grup {% if group_enabled %}aktif{% else %}belum diaktifkan{% endif %}</span>
+  </div>
+  {% if not personal_enabled or not group_enabled %}<div class="setup-warning mt-2">Anda tetap dapat menyiapkan draft. Aktifkan jenis broadcast yang sudah diuji melalui <a href="{% url 'feature_settings' %}"><strong>Pengaturan → Fitur</strong></a> sebelum mengirim.</div>{% endif %}
+
+  {% if form.errors %}<div class="alert alert-error"><strong>Draft belum dapat disimpan.</strong> Periksa bidang yang diberi tanda merah. {{ form.non_field_errors }}</div>{% endif %}
+
+  <div class="wizard-progress">
+    <button type="button" class="wizard-pill active" data-step-link="1">1. Tujuan</button>
+    <button type="button" class="wizard-pill" data-step-link="2">2. Device</button>
+    <button type="button" class="wizard-pill" data-step-link="3">3. Penerima</button>
+    <button type="button" class="wizard-pill" data-step-link="4">4. Pesan</button>
+    <button type="button" class="wizard-pill" data-step-link="5">5. Periksa</button>
+  </div>
+
+  <form method="post" id="broadcastForm" class="card card-pad">
+    {% csrf_token %}
+    <div style="display:none">{{ form.target_type }}{{ form.message_type }}</div>
+
+    <section class="broadcast-step active" data-step="1">
+      <div class="eyebrow">LANGKAH 1</div><h3>Pilih jenis tujuan</h3><p class="muted">Pilihan ini menentukan daftar penerima pada langkah berikutnya.</p>
+      <div class="target-grid mt-2">
+        <button type="button" class="select-card" data-target="personal"><strong>👤 Personal</strong><small>Satu nomor, banyak nomor manual, atau kontak CRM yang memiliki consent.</small></button>
+        <button type="button" class="select-card" data-target="group"><strong>👥 Grup WhatsApp</strong><small>Satu grup, banyak grup, kategori, atau preset grup yang tersimpan.</small></button>
+      </div>
+      {{ form.target_type.errors }}
+      <div class="wizard-actions"><span></span><button type="button" class="btn btn-primary" data-next>Lanjut pilih device</button></div>
+    </section>
+
+    <section class="broadcast-step" data-step="2">
+      <div class="eyebrow">LANGKAH 2</div><h3>Pilih nomor pengirim</h3><p class="muted">Hanya device yang sudah memiliki Device Key dan diaktifkan untuk pengiriman yang muncul.</p>
+      <div class="form-row"><label>{{ form.device.label }}</label>{{ form.device }}{{ form.device.errors }}<span class="helptext">Untuk grup, daftar grup akan dimuat dari device ini.</span></div>
+      <div id="deviceHint" class="surface-soft mt-2">Pilih device untuk melanjutkan.</div>
+      <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Lanjut pilih penerima</button></div>
+    </section>
+
+    <section class="broadcast-step" data-step="3">
+      <div class="eyebrow">LANGKAH 3</div><h3>Pilih penerima</h3>
+      <div id="personalRecipients">
+        <div class="grid grid-2">
+          <div class="form-row"><label>{{ form.contacts.label }}</label>{{ form.contacts }}{{ form.contacts.errors }}<span class="helptext">Hanya kontak dengan izin pemasaran.</span></div>
+          <div class="form-row"><label>{{ form.manual_numbers.label }}</label>{{ form.manual_numbers }}{{ form.manual_numbers.errors }}<span class="helptext">Satu nomor per baris. Nomor 08 akan dinormalisasi ke 62.</span></div>
+        </div>
+      </div>
+      <div id="groupRecipients" hidden>
+        <div class="group-toolbar">
+          <input id="groupSearch" class="form-control" type="search" placeholder="Cari nama grup...">
+          <select id="presetPicker" class="form-control"><option value="">Pilih preset (opsional)</option></select>
+          <button type="button" class="btn" id="reloadGroups">Muat ulang</button>
+        </div>
+        <div class="selected-bar"><strong><span id="selectedGroupCount">0</span> grup dipilih</strong><button type="button" class="btn btn-sm" id="clearGroups">Kosongkan pilihan</button></div>
+        <div id="groupLoading" class="group-empty">Pilih device untuk menampilkan grup.</div>
+        <div id="groupGrid" class="group-grid" hidden></div>
+        <div id="groupEmpty" class="group-empty" hidden><h3>Belum ada grup tujuan</h3><p>Sinkronkan grup pada device ini. Setelah berhasil, grup akan muncul di sini tanpa perlu mengetik ID.</p><div class="flex gap justify-center"><a id="manageGroupsLink" class="btn" href="{% url 'starsender_center' %}">Kelola Device</a><button id="syncGroupsButton" type="button" class="btn btn-primary">Sinkronkan Grup Sekarang</button></div></div>
+        <div class="native-groups-wrap">{{ form.groups }}{{ form.groups.errors }}{{ form.preset }}</div>
+        <div class="surface-soft mt-2">
+          <strong>Simpan pilihan menjadi preset</strong>
+          <div class="grid grid-2 mt-1"><input id="quickPresetName" class="form-control" placeholder="Contoh: Komunitas UMKM Jawa Barat"><button type="button" class="btn" id="savePreset">Simpan preset pilihan</button></div>
+          <div id="presetResult" class="mini-note mt-1"></div>
+        </div>
+        {{ form.confirm_group_permission.errors }}
+      </div>
+      <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Lanjut susun pesan</button></div>
+    </section>
+
+    <section class="broadcast-step" data-step="4">
+      <div class="eyebrow">LANGKAH 4</div><h3>Susun pesan</h3>
+      <div class="template-row"><div class="form-row"><label>{{ form.template.label }}</label>{{ form.template }}{{ form.template.errors }}<span class="helptext">Pilih template untuk mengisi teks dan media secara otomatis.</span></div><a class="btn" href="{% url 'broadcast_template_list' %}" target="_blank">Kelola Template</a></div>
+      <div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Nama internal, tidak dikirim kepada penerima.</span></div>
+      <div class="message-grid">
+        <button type="button" class="select-card" data-message="text"><strong>📝 Teks</strong><small>Pesan teks tanpa lampiran.</small></button>
+        <button type="button" class="select-card" data-message="media"><strong>🖼 Media</strong><small>Gambar, dokumen, audio, atau video melalui URL media.</small></button>
+      </div>
+      <div class="form-row mt-2"><label>{{ form.body.label }}</label>{{ form.body }}{{ form.body.errors }}<span class="helptext">Untuk personal dapat memakai: {% templatetag openvariable %}name{% templatetag closevariable %}, {% templatetag openvariable %}phone{% templatetag closevariable %}, {% templatetag openvariable %}company{% templatetag closevariable %}.</span></div>
+      <div class="form-row" id="mediaField"><label>{{ form.file_url.label }}</label>{{ form.file_url }}{{ form.file_url.errors }}<span class="helptext">Boleh diisi otomatis dari template media yang sudah di-upload.</span></div>
+      <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Lanjut periksa</button></div>
+    </section>
+
+    <section class="broadcast-step" data-step="5">
+      <div class="eyebrow">LANGKAH 5</div><h3>Periksa dan simpan draft</h3>
+      <div class="grid grid-2">
+        <div><div class="form-row"><label>{{ form.delay_seconds.label }}</label>{{ form.delay_seconds }}{{ form.delay_seconds.errors }}<span class="helptext">Minimal 30 detik antar tujuan.</span></div><div class="form-row"><label>{{ form.scheduled_at.label }}</label>{{ form.scheduled_at }}{{ form.scheduled_at.errors }}<span class="helptext">Kosongkan untuk menyiapkan kirim segera.</span></div></div>
+        <div class="preview-box" id="reviewBox">Preview akan muncul di sini.</div>
+      </div>
+      <div id="personalConsent" class="safety-box mt-2">{{ form.confirm_consent }} <label for="{{ form.confirm_consent.id_for_label }}">{{ form.confirm_consent.label }}</label>{{ form.confirm_consent.errors }}</div>
+      <div id="groupConsent" class="safety-box mt-2" hidden>{{ form.confirm_group_permission }} <label for="{{ form.confirm_group_permission.id_for_label }}">{{ form.confirm_group_permission.label }}</label>{{ form.confirm_group_permission.errors }}</div>
+      <div class="safety-box mt-2"><strong>Belum mengirim:</strong> tombol di bawah hanya membuat draft dan daftar tujuan. Anda masih dapat memeriksa semuanya sebelum mengetik KIRIM.</div>
+      <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button class="btn btn-primary" type="submit">Simpan Draft & Periksa Tujuan</button></div>
+    </section>
+  </form>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
 (() => {
-  const form=document.getElementById('broadcastWizardForm');
+  const form=document.getElementById('broadcastForm');
   const target=document.getElementById('id_target_type');
+  const device=document.getElementById('id_device');
   const messageType=document.getElementById('id_message_type');
+  const nativeGroups=document.getElementById('id_groups');
+  const nativePreset=document.getElementById('id_preset');
+  const template=document.getElementById('id_template');
   const steps=[...document.querySelectorAll('[data-step]')];
   const links=[...document.querySelectorAll('[data-step-link]')];
-  let current=1;
-  const queryTarget=new URLSearchParams(location.search).get('target');
-  if(queryTarget&&['personal','group'].includes(queryTarget))target.value=queryTarget;
-  if(!target.value)target.value='personal'; if(!messageType.value)messageType.value='text';
+  const selectedGroups=new Set([...nativeGroups.selectedOptions].map(o=>o.value));
+  let groupData=[]; let presetData=[]; let current=1; let syncUrl='';
+  if(!target.value) target.value=new URLSearchParams(location.search).get('target')||'personal';
+  if(!messageType.value) messageType.value='text';
 
-  function show(step){current=Math.max(1,Math.min(6,step));steps.forEach(el=>el.classList.toggle('active',Number(el.dataset.step)===current));links.forEach(el=>{const n=Number(el.dataset.stepLink);el.classList.toggle('active',n===current);el.classList.toggle('done',n<current);});if(current===6)updateReview();window.scrollTo({top:0,behavior:'smooth'});}
-  function selectedText(id){const el=document.getElementById(id);return el?.selectedOptions?.[0]?.textContent?.trim()||'Belum dipilih';}
-  function selectedCount(id){const el=document.getElementById(id);return el?[...el.selectedOptions].length:0;}
-  function updateChoices(){
-    document.querySelectorAll('[data-target-choice]').forEach(btn=>{const selected=btn.dataset.targetChoice===target.value;btn.classList.toggle('selected',selected);btn.querySelector('input').checked=selected;});
-    document.querySelectorAll('[data-message-choice]').forEach(btn=>{const selected=btn.dataset.messageChoice===messageType.value;btn.classList.toggle('selected',selected);btn.querySelector('input').checked=selected;});
-    const personal=target.value==='personal';document.getElementById('personalRecipients').hidden=!personal;document.getElementById('groupRecipients').hidden=personal;document.getElementById('personalConsent').hidden=!personal;document.getElementById('groupConsent').hidden=personal;document.getElementById('recipientHelp').textContent=personal?'Pilih kontak consent atau masukkan nomor manual.':'Pilih grup secara langsung atau gunakan preset tersimpan.';
+  function show(n){current=Math.max(1,Math.min(5,n));steps.forEach(x=>x.classList.toggle('active',Number(x.dataset.step)===current));links.forEach(x=>{const k=Number(x.dataset.stepLink);x.classList.toggle('active',k===current);x.classList.toggle('done',k<current)});if(current===5)review();window.scrollTo({top:0,behavior:'smooth'});}
+  function updateMode(){
+    document.querySelectorAll('[data-target]').forEach(x=>x.classList.toggle('selected',x.dataset.target===target.value));
+    document.querySelectorAll('[data-message]').forEach(x=>x.classList.toggle('selected',x.dataset.message===messageType.value));
+    const personal=target.value==='personal';
+    document.getElementById('personalRecipients').hidden=!personal;document.getElementById('groupRecipients').hidden=personal;
+    document.getElementById('personalConsent').hidden=!personal;document.getElementById('groupConsent').hidden=personal;
     document.getElementById('mediaField').hidden=messageType.value!=='media';
+    if(!personal&&device.value) loadGroups();
   }
-  function basicValid(step){
-    if(step===1&&!target.value){alert('Pilih Personal atau Grup.');return false;}
-    if(step===2&&!document.getElementById('id_device').value){alert('Pilih device pengiriman.');return false;}
-    if(step===4&&!document.getElementById('id_name').value.trim()){alert('Isi nama broadcast.');return false;}
+  function validateStep(){
+    if(current===1&&!target.value){alert('Pilih tujuan Personal atau Grup.');return false;}
+    if(current===2&&!device.value){alert('Pilih device WhatsApp. Bila kosong, siapkan Device Key dan aktifkan pengiriman di WhatsApp & Channel.');return false;}
+    if(current===3&&target.value==='group'&&selectedGroups.size===0){alert('Pilih minimal satu grup atau gunakan preset.');return false;}
+    if(current===4&&!document.getElementById('id_name').value.trim()){alert('Isi nama broadcast.');return false;}
     return true;
   }
-  function updateReview(){
-    document.getElementById('reviewName').textContent=document.getElementById('id_name').value||'—';
-    document.getElementById('reviewTarget').textContent=target.value==='group'?'Grup WhatsApp':'Personal';
-    document.getElementById('reviewDevice').textContent=selectedText('id_device');
-    const manual=document.getElementById('id_manual_numbers').value.split(/\n+/).filter(Boolean).length;
-    const recipients=target.value==='group'?`${selectedCount('id_groups')} grup dipilih${document.getElementById('id_preset').value?' + preset':''}`:`${selectedCount('id_contacts')} kontak + ${manual} nomor manual`;
-    document.getElementById('reviewRecipients').textContent=recipients;
-    document.getElementById('reviewMessageType').textContent=messageType.value==='media'?'Media':'Teks';
-    document.getElementById('reviewDelay').textContent=`${document.getElementById('id_delay_seconds').value||0} detik`;
-    document.getElementById('reviewSchedule').textContent=document.getElementById('id_scheduled_at').value||'Belum dijadwalkan';
-    document.getElementById('reviewBody').textContent=document.getElementById('id_body').value||'(tanpa teks)';
+  function syncNativeGroups(){[...nativeGroups.options].forEach(o=>o.selected=selectedGroups.has(o.value));document.getElementById('selectedGroupCount').textContent=selectedGroups.size;}
+  function renderGroups(){
+    const q=document.getElementById('groupSearch').value.toLowerCase().trim();
+    const rows=groupData.filter(g=>!q||g.name.toLowerCase().includes(q)||(g.categories||[]).join(' ').toLowerCase().includes(q));
+    const grid=document.getElementById('groupGrid');grid.innerHTML='';
+    rows.forEach(g=>{const label=document.createElement('label');label.className='group-card'+(selectedGroups.has(g.id)?' selected':'');label.innerHTML=`<input type="checkbox" value="${g.id}" ${selectedGroups.has(g.id)?'checked':''}><span><strong>${escapeHtml(g.name)}</strong><small>${escapeHtml((g.categories||[]).join(' · ')||'Belum berkategori')}</small></span>`;const cb=label.querySelector('input');cb.addEventListener('change',()=>{cb.checked?selectedGroups.add(g.id):selectedGroups.delete(g.id);label.classList.toggle('selected',cb.checked);syncNativeGroups();});grid.appendChild(label);});
+    grid.hidden=groupData.length===0;document.getElementById('groupEmpty').hidden=groupData.length!==0;document.getElementById('groupLoading').hidden=true;syncNativeGroups();
   }
-  document.querySelectorAll('[data-target-choice]').forEach(btn=>btn.addEventListener('click',()=>{target.value=btn.dataset.targetChoice;updateChoices();}));
-  document.querySelectorAll('[data-message-choice]').forEach(btn=>btn.addEventListener('click',()=>{messageType.value=btn.dataset.messageChoice;updateChoices();}));
-  document.querySelectorAll('[data-next]').forEach(btn=>btn.addEventListener('click',()=>{if(basicValid(current))show(current+1);}));
-  document.querySelectorAll('[data-prev]').forEach(btn=>btn.addEventListener('click',()=>show(current-1)));
-  links.forEach(btn=>btn.addEventListener('click',()=>show(Number(btn.dataset.stepLink))));
-  updateChoices();show(1);
+  function populateNativeOptions(){const existing=new Set([...nativeGroups.options].map(o=>o.value));groupData.forEach(g=>{if(!existing.has(g.id)){const o=new Option(g.name,g.id);nativeGroups.add(o);}});syncNativeGroups();}
+  function populatePresets(){const picker=document.getElementById('presetPicker');picker.innerHTML='<option value="">Pilih preset (opsional)</option>';nativePreset.innerHTML='<option value="">---------</option>';presetData.forEach(p=>{picker.add(new Option(`${p.name} (${p.count})`,p.id));nativePreset.add(new Option(p.name,p.id));});}
+  async function loadGroups(){
+    if(!device.value)return;document.getElementById('groupLoading').hidden=false;document.getElementById('groupLoading').textContent='Memuat grup dari database...';document.getElementById('groupGrid').hidden=true;document.getElementById('groupEmpty').hidden=true;
+    try{const r=await fetch(`{% url 'broadcast_groups_api' %}?device=${encodeURIComponent(device.value)}`,{headers:{'X-Requested-With':'XMLHttpRequest'}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.error||'Gagal memuat grup');groupData=data.groups||[];presetData=data.presets||[];syncUrl=data.sync_url||'';document.getElementById('manageGroupsLink').href=data.manage_url||'{% url 'starsender_center' %}';populateNativeOptions();populatePresets();renderGroups();document.getElementById('deviceHint').innerHTML=groupData.length?`<strong>${groupData.length} grup siap dipilih.</strong> Gunakan pencarian atau preset pada langkah penerima.`:'Device siap, tetapi belum ada grup tersinkron.';}catch(e){document.getElementById('groupLoading').textContent=e.message;}
+  }
+  async function applyTemplate(){if(!template.value)return;try{const r=await fetch(`/broadcasts/templates/${template.value}/data.json`);const data=await r.json();if(!data.ok)return;messageType.value=data.message_type||'text';document.getElementById('id_body').value=data.body||'';document.getElementById('id_file_url').value=data.media_url||'';if(!document.getElementById('id_name').value)document.getElementById('id_name').value=data.name;updateMode();}catch(e){console.error(e)}}
+  function review(){const dev=device.selectedOptions[0]?.textContent||'Belum dipilih';const count=target.value==='group'?`${selectedGroups.size} grup`:`${document.getElementById('id_contacts').selectedOptions.length} kontak + ${document.getElementById('id_manual_numbers').value.split(/\n+/).filter(Boolean).length} nomor manual`;document.getElementById('reviewBox').textContent=`Nama: ${document.getElementById('id_name').value||'—'}\nTujuan: ${target.value==='group'?'Grup WhatsApp':'Personal'}\nDevice: ${dev}\nPenerima: ${count}\nJenis: ${messageType.value==='media'?'Media':'Teks'}\nDelay: ${document.getElementById('id_delay_seconds').value||0} detik\n\n${document.getElementById('id_body').value||'(tanpa teks)'}`;}
+  function escapeHtml(v){return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+  document.querySelectorAll('[data-target]').forEach(x=>x.addEventListener('click',()=>{target.value=x.dataset.target;updateMode()}));
+  document.querySelectorAll('[data-message]').forEach(x=>x.addEventListener('click',()=>{messageType.value=x.dataset.message;updateMode()}));
+  document.querySelectorAll('[data-next]').forEach(x=>x.addEventListener('click',()=>{if(validateStep())show(current+1)}));document.querySelectorAll('[data-prev]').forEach(x=>x.addEventListener('click',()=>show(current-1)));links.forEach(x=>x.addEventListener('click',()=>show(Number(x.dataset.stepLink))));
+  device.addEventListener('change',()=>{selectedGroups.clear();syncNativeGroups();if(target.value==='group')loadGroups()});
+  document.getElementById('groupSearch').addEventListener('input',renderGroups);document.getElementById('reloadGroups').addEventListener('click',loadGroups);document.getElementById('clearGroups').addEventListener('click',()=>{selectedGroups.clear();renderGroups()});template.addEventListener('change',applyTemplate);
+  document.getElementById('presetPicker').addEventListener('change',e=>{const p=presetData.find(x=>x.id===e.target.value);selectedGroups.clear();if(p)(p.group_ids||[]).forEach(id=>selectedGroups.add(id));nativePreset.value=e.target.value||'';renderGroups()});
+  document.getElementById('syncGroupsButton').addEventListener('click',async()=>{if(!syncUrl)return;const csrf=form.querySelector('[name=csrfmiddlewaretoken]').value;const btn=document.getElementById('syncGroupsButton');btn.disabled=true;btn.textContent='Menyinkronkan...';try{const r=await fetch(syncUrl,{method:'POST',headers:{'X-CSRFToken':csrf,'X-Requested-With':'XMLHttpRequest'}});if(!r.ok)throw new Error('Sinkronisasi gagal. Buka menu WhatsApp & Channel untuk melihat detail.');setTimeout(loadGroups,1200);}catch(e){alert(e.message)}finally{btn.disabled=false;btn.textContent='Sinkronkan Grup Sekarang'}});
+  document.getElementById('savePreset').addEventListener('click',async()=>{const name=document.getElementById('quickPresetName').value.trim();const out=document.getElementById('presetResult');if(!name||!device.value||selectedGroups.size===0){out.textContent='Isi nama preset dan pilih minimal satu grup.';return}const body=new FormData();body.append('name',name);body.append('device',device.value);selectedGroups.forEach(id=>body.append('groups',id));try{const r=await fetch('{% url 'group_preset_quick_create' %}',{method:'POST',headers:{'X-CSRFToken':form.querySelector('[name=csrfmiddlewaretoken]').value},body});const data=await r.json();if(!r.ok)throw new Error(data.error||'Gagal menyimpan preset');out.textContent=`Preset “${data.name}” tersimpan (${data.count} grup).`;document.getElementById('quickPresetName').value='';await loadGroups();document.getElementById('presetPicker').value=data.id;nativePreset.value=data.id;}catch(e){out.textContent=e.message}});
+  updateMode();show(1);
 })();
 </script>
 {% endblock %}

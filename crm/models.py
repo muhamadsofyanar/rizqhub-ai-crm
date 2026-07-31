@@ -804,6 +804,37 @@ class StarSenderInboundEvent(TenantOwnedModel):
         indexes = [models.Index(fields=["tenant", "status", "created_at"])]
 
 
+class BroadcastTemplate(TenantOwnedModel):
+    """Reusable organic broadcast template.
+
+    Templates are intentionally tenant-scoped and unlimited at application level.
+    A media template may use either an uploaded file or a public HTTPS URL.
+    """
+
+    TYPE_CHOICES = [("text", "Teks"), ("media", "Media")]
+    name = models.CharField(max_length=180)
+    category = models.CharField(max_length=100, blank=True)
+    message_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="text")
+    body = models.TextField(blank=True)
+    media_file = models.FileField(upload_to="broadcast_templates/%Y/%m/", blank=True)
+    media_url = models.URLField(blank=True)
+    public_token = models.CharField(max_length=100, default=secrets.token_urlsafe, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    usage_count = models.PositiveIntegerField(default=0)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="unique_tenant_broadcast_template")
+        ]
+        indexes = [models.Index(fields=["tenant", "is_active", "message_type"])]
+
+    def __str__(self):
+        return self.name
+
+
 class Broadcast(TenantOwnedModel):
     TARGET_CHOICES = [("personal", "Personal"), ("group", "Grup")]
     STATUS_CHOICES = [

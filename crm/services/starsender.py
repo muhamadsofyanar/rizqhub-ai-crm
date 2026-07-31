@@ -129,7 +129,13 @@ def _extract_collection(data: Any, candidate_keys: tuple[str, ...]) -> list[dict
     names to JIDs. This parser deliberately ignores status/message envelopes.
     """
     if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
+        rows = []
+        for item in data:
+            if isinstance(item, dict):
+                rows.append(item)
+            elif isinstance(item, (str, int)):
+                rows.append({"id": str(item), "name": str(item)})
+        return rows
     if not isinstance(data, dict) or not data:
         return []
 
@@ -143,7 +149,7 @@ def _extract_collection(data: Any, candidate_keys: tuple[str, ...]) -> list[dict
     for key in candidate_keys:
         value = data.get(key)
         if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
+            return _extract_collection(value, candidate_keys)
         if isinstance(value, dict):
             nested = _extract_collection(value, candidate_keys)
             if nested:
@@ -163,10 +169,17 @@ def _extract_collection(data: Any, candidate_keys: tuple[str, ...]) -> list[dict
     if not envelope_keys.intersection(data.keys()) and all(
         isinstance(value, (str, int)) for value in data.values()
     ):
-        return [
-            {"name": str(name), "id": str(identifier)}
-            for name, identifier in data.items()
-        ]
+        rows = []
+        for map_key, map_value in data.items():
+            key_text = str(map_key)
+            value_text = str(map_value)
+            key_looks_like_id = "@g.us" in key_text or key_text.isdigit()
+            value_looks_like_id = "@g.us" in value_text or value_text.isdigit()
+            if key_looks_like_id and not value_looks_like_id:
+                rows.append({"id": key_text, "name": value_text})
+            else:
+                rows.append({"name": key_text, "id": value_text})
+        return rows
 
     for value in data.values():
         if isinstance(value, (dict, list)):
@@ -190,12 +203,14 @@ def _normalize_status(value: Any) -> str:
     if value is False or value == 0:
         return "disconnected"
     raw = str(value or "").strip().lower()
-    if any(word in raw for word in ("connect", "ready", "online", "authenticated")):
-        return "connected"
+    # Negative states must be checked before "connect" because
+    # "disconnected" and "not connected" also contain that substring.
+    if any(word in raw for word in ("disconnect", "offline", "logout", "not connected", "not_connect")):
+        return "disconnected"
     if any(word in raw for word in ("scan", "qr")):
         return "scanning"
-    if any(word in raw for word in ("disconnect", "offline", "logout", "not connected")):
-        return "disconnected"
+    if any(word in raw for word in ("connect", "ready", "online", "authenticated")):
+        return "connected"
     return "unknown"
 
 
@@ -311,7 +326,7 @@ def sync_devices(account: StarSenderAccount) -> dict:
             external_device_id__in=seen
         ).update(connection_status="unknown", updated_at=timezone.now())
     account.last_sync_at = timezone.now()
-    account.last_sync_status = "success"
+    account.last_sync_status = "connection_ok"
     account.last_error = ""
     account.save(update_fields=["last_sync_at", "last_sync_status", "last_error", "updated_at"])
     return {"created": created, "updated": updated, "total": len(rows), "raw": raw}
@@ -362,9 +377,14 @@ def sync_groups(device: StarSenderDevice) -> dict:
             is_active=False, updated_at=timezone.now()
         )
     device.last_group_sync_at = timezone.now()
-    device.last_error = ""
+    provider_message = str(raw.get("message", "")) if isinstance(raw, dict) else ""
+    device.last_error = "" if rows else (
+        "StarSender merespons berhasil, tetapi tidak mengembalikan grup. "
+        "Pastikan Device Key berasal dari device ini, device connected, dan akun WhatsApp memang tergabung dalam grup. "
+        + (f"Respons: {provider_message}" if provider_message else "")
+    )
     device.save(update_fields=["last_group_sync_at", "last_error", "updated_at"])
-    return {"created": created, "updated": updated, "total": len(rows), "raw": raw}
+    return {"created": created, "updated": updated, "total": len(rows), "raw": raw, "warning": device.last_error}
 
 
 def send_personal(

@@ -1,0 +1,8 @@
+{% extends 'crm/base.html' %}{% block topbar %}{{ title }}{% endblock %}{% block content %}
+<div class="page-head"><div><h2>{{ title }}</h2><p>Buat template yang jelas dan relevan. Upload media atau gunakan URL HTTPS publik.</p></div><a class="btn" href="{% url 'broadcast_template_list' %}">Kembali</a></div>
+<form method="post" enctype="multipart/form-data" class="card card-pad" style="max-width:900px">{% csrf_token %}
+{% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+{% for field in form %}<div class="form-row"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}
+<div class="safety-box">Template media yang di-upload disajikan melalui URL token acak agar dapat diambil StarSender. Jangan upload dokumen rahasia pelanggan.</div>
+<div class="actions mt-2"><a class="btn" href="{% url 'broadcast_template_list' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Template</button></div>
+</form>{% endblock %}

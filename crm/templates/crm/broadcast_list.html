@@ -9,10 +9,11 @@
 <p class="safety-box">Gunakan hanya untuk penerima yang memberi izin. Delay minimal 30 detik dan pembatasan penerima tetap diberlakukan.</p>
 {% endblock %}
 {% block content %}
-<div class="page-head"><div><h2>Broadcast</h2><p>Semua pengiriman memakai preview, antrean bertahap, audit, dan tombol pembatalan.</p></div><a class="btn btn-primary" href="{% url 'broadcast_create' %}">+ Buat Broadcast</a></div>
+<div class="page-head"><div><h2>Broadcast</h2><p>Semua pengiriman memakai preview, antrean bertahap, audit, dan tombol pembatalan.</p></div><div class="flex gap wrap"><a class="btn" href="{% url 'broadcast_template_list' %}">Template</a><a class="btn" href="{% url 'whatsapp_group_list' %}">Daftar Grup</a><a class="btn" href="{% url 'group_preset_list' %}">Preset Grup</a><a class="btn btn-primary" href="{% url 'broadcast_create' %}">+ Buat Broadcast</a></div></div>
 <div class="quick-actions">
   <a class="quick-action" href="{% url 'broadcast_create' %}?target=personal"><span class="quick-action-icon">◎</span><span><strong>Kirim Personal</strong><small>Pilih kontak consent atau masukkan nomor yang sudah memberi izin.</small></span></a>
   <a class="quick-action" href="{% url 'broadcast_create' %}?target=group"><span class="quick-action-icon">◉</span><span><strong>Kirim ke Grup</strong><small>Pilih banyak grup, kategori, atau preset tersimpan.</small></span></a>
+  <a class="quick-action" href="{% url 'broadcast_template_list' %}"><span class="quick-action-icon">▤</span><span><strong>Template Pesan</strong><small>Simpan teks dan media untuk digunakan berkali-kali.</small></span></a>
   <a class="quick-action" href="{% url 'group_preset_list' %}"><span class="quick-action-icon">▦</span><span><strong>Preset Grup</strong><small>Simpan kumpulan grup agar dapat dipakai kembali.</small></span></a>
   <a class="quick-action" href="{% url 'starsender_center' %}"><span class="quick-action-icon">⌁</span><span><strong>Periksa Device</strong><small>Pastikan device connected dan pengiriman aktif.</small></span></a>
 </div>

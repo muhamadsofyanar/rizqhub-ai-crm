@@ -7,6 +7,7 @@ from django.db import connection
 
 from crm.models import (
     Broadcast,
+    BroadcastTemplate,
     FeatureFlag,
     StarSenderAccount,
     StarSenderDevice,
@@ -46,6 +47,7 @@ class Command(BaseCommand):
             StarSenderDevice._meta.db_table,
             WhatsAppGroup._meta.db_table,
             Broadcast._meta.db_table,
+            BroadcastTemplate._meta.db_table,
         }
         existing_tables = set(connection.introspection.table_names())
         missing = sorted(required_tables - existing_tables)
