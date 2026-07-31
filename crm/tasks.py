@@ -692,12 +692,16 @@ def launch_broadcast(broadcast_id: str):
 def send_broadcast_recipient(self, recipient_id: str):
     """Send one broadcast target without unsafe automatic duplicate retries."""
     with transaction.atomic():
-        recipient = (
-            BroadcastRecipient.objects.select_for_update()
-            .select_related("broadcast__device", "broadcast__tenant", "contact", "group")
-            .get(id=recipient_id)
+        # Lock only concrete rows. PostgreSQL rejects ``FOR UPDATE`` when the
+        # same query contains nullable OUTER JOINs (contact/group are nullable).
+        # Fetch and lock the recipient and broadcast separately to preserve
+        # idempotency without locking nullable joined tables.
+        recipient = BroadcastRecipient.objects.select_for_update().get(id=recipient_id)
+        broadcast = (
+            Broadcast.objects.select_for_update()
+            .select_related("device", "tenant")
+            .get(id=recipient.broadcast_id)
         )
-        broadcast = recipient.broadcast
         if recipient.status in {"sending", "sent", "uncertain", "cancelled", "skipped"}:
             return
         if broadcast.status == "cancelled":
