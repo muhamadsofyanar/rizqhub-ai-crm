@@ -92,11 +92,17 @@
       <div class="template-row"><div class="form-row"><label>{{ form.template.label }}</label>{{ form.template }}{{ form.template.errors }}<span class="helptext">Pilih template untuk mengisi teks dan media secara otomatis.</span></div><a class="btn" href="{% url 'broadcast_template_list' %}" target="_blank">Kelola Template</a></div>
       <div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Nama internal, tidak dikirim kepada penerima.</span></div>
       <div class="message-grid">
-        <button type="button" class="select-card" data-message="text"><strong>📝 Teks</strong><small>Pesan teks tanpa lampiran.</small></button>
-        <button type="button" class="select-card" data-message="media"><strong>🖼 Media</strong><small>Gambar, dokumen, audio, atau video melalui URL media.</small></button>
+        <button type="button" class="select-card" data-message="text"><strong>📝 Teks saja</strong><small>Kirim isi pesan tanpa lampiran.</small></button>
+        <button type="button" class="select-card" data-message="media"><strong>🖼 Teks + media</strong><small>Kirim gambar, dokumen, audio, atau video bersama caption teks.</small></button>
       </div>
-      <div class="form-row mt-2"><label>{{ form.body.label }}</label>{{ form.body }}{{ form.body.errors }}<span class="helptext">Untuk personal dapat memakai: {% templatetag openvariable %}name{% templatetag closevariable %}, {% templatetag openvariable %}phone{% templatetag closevariable %}, {% templatetag openvariable %}company{% templatetag closevariable %}.</span></div>
-      <div class="form-row" id="mediaField"><label>{{ form.file_url.label }}</label>{{ form.file_url }}{{ form.file_url.errors }}<span class="helptext">Boleh diisi otomatis dari template media yang sudah di-upload.</span></div>
+      <div class="form-row mt-2"><div class="between flex items-center"><label>{{ form.body.label }}</label><small id="broadcastMessageCounter" class="muted">0 karakter</small></div>{{ form.body }}{{ form.body.errors }}<span class="helptext">Pada mode Teks + media, isi ini dikirim sebagai caption bersama file. Untuk personal dapat memakai: {% templatetag openvariable %}name{% templatetag closevariable %}, {% templatetag openvariable %}phone{% templatetag closevariable %}, {% templatetag openvariable %}company{% templatetag closevariable %}.</span></div>
+      <div class="surface-soft mt-2" id="ctaBuilder">
+        <div class="section-head-simple"><div><strong>Tautan tindakan</strong><p class="muted">Alternatif aman untuk tombol: tambahkan hingga 3 tautan yang dapat diketuk di WhatsApp.</p></div></div>
+        <div class="grid grid-2"><input id="ctaLabel" class="form-control" placeholder="Contoh: Konsultasi sekarang"><input id="ctaUrl" class="form-control" placeholder="https://... atau https://wa.me/..."></div>
+        <div class="actions mt-1"><button type="button" class="btn" id="insertCta">Tambahkan ke pesan</button></div>
+        <div class="mini-note">Tombol WhatsApp native belum tersedia pada API publik StarSender; tautan CTA ini kompatibel untuk personal dan grup.</div>
+      </div>
+      <div class="form-row" id="mediaField"><label>{{ form.file_url.label }}</label>{{ form.file_url }}{{ form.file_url.errors }}<span class="helptext">Gunakan URL HTTPS publik. Gambar akan dikirim sebagai gambar bila server memberikan Content-Type yang benar.</span></div>
       <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Lanjut periksa</button></div>
     </section>
 
@@ -124,6 +130,7 @@
   const nativeGroups=document.getElementById('id_groups');
   const nativePreset=document.getElementById('id_preset');
   const template=document.getElementById('id_template');
+  const bodyField=document.getElementById('id_body');
   const steps=[...document.querySelectorAll('[data-step]')];
   const links=[...document.querySelectorAll('[data-step-link]')];
   const selectedGroups=new Set([...nativeGroups.selectedOptions].map(o=>o.value));
@@ -162,8 +169,19 @@
     if(!device.value)return;document.getElementById('groupLoading').hidden=false;document.getElementById('groupLoading').textContent='Memuat grup dari database...';document.getElementById('groupGrid').hidden=true;document.getElementById('groupEmpty').hidden=true;
     try{const r=await fetch(`{% url 'broadcast_groups_api' %}?device=${encodeURIComponent(device.value)}`,{headers:{'X-Requested-With':'XMLHttpRequest'}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.error||'Gagal memuat grup');groupData=data.groups||[];presetData=data.presets||[];syncUrl=data.sync_url||'';document.getElementById('manageGroupsLink').href=data.manage_url||'{% url 'starsender_center' %}';populateNativeOptions();populatePresets();renderGroups();document.getElementById('deviceHint').innerHTML=groupData.length?`<strong>${groupData.length} grup siap dipilih.</strong> Gunakan pencarian atau preset pada langkah penerima.`:'Device siap, tetapi belum ada grup tersinkron.';}catch(e){document.getElementById('groupLoading').textContent=e.message;}
   }
-  async function applyTemplate(){if(!template.value)return;try{const r=await fetch(`/broadcasts/templates/${template.value}/data.json`);const data=await r.json();if(!data.ok)return;messageType.value=data.message_type||'text';document.getElementById('id_body').value=data.body||'';document.getElementById('id_file_url').value=data.media_url||'';if(!document.getElementById('id_name').value)document.getElementById('id_name').value=data.name;updateMode();}catch(e){console.error(e)}}
-  function review(){const dev=device.selectedOptions[0]?.textContent||'Belum dipilih';const count=target.value==='group'?`${selectedGroups.size} grup`:`${document.getElementById('id_contacts').selectedOptions.length} kontak + ${document.getElementById('id_manual_numbers').value.split(/\n+/).filter(Boolean).length} nomor manual`;document.getElementById('reviewBox').textContent=`Nama: ${document.getElementById('id_name').value||'—'}\nTujuan: ${target.value==='group'?'Grup WhatsApp':'Personal'}\nDevice: ${dev}\nPenerima: ${count}\nJenis: ${messageType.value==='media'?'Media':'Teks'}\nDelay: ${document.getElementById('id_delay_seconds').value||0} detik\n\n${document.getElementById('id_body').value||'(tanpa teks)'}`;}
+  async function applyTemplate(){if(!template.value)return;try{const r=await fetch(`/broadcasts/templates/${template.value}/data.json`);const data=await r.json();if(!data.ok)return;messageType.value=data.message_type||'text';bodyField.value=data.body||'';updateCounter();document.getElementById('id_file_url').value=data.media_url||'';if(!document.getElementById('id_name').value)document.getElementById('id_name').value=data.name;updateMode();}catch(e){console.error(e)}}
+  function updateCounter(){const el=document.getElementById('broadcastMessageCounter');if(el)el.textContent=`${(bodyField.value||'').length} karakter`;}
+  function insertCta(){
+    const label=document.getElementById('ctaLabel').value.trim();
+    const url=document.getElementById('ctaUrl').value.trim();
+    if(!label||!/^https:\/\//i.test(url)){alert('Isi nama tindakan dan URL HTTPS yang valid.');return;}
+    const block=`\n\n🔗 *${label}*\n${url}`;
+    if((bodyField.value.match(/\n🔗 \*/g)||[]).length>=3){alert('Maksimal 3 tautan tindakan per pesan.');return;}
+    bodyField.value=(bodyField.value||'').replace(/\s+$/,'')+block;
+    document.getElementById('ctaLabel').value='';document.getElementById('ctaUrl').value='';
+    bodyField.focus();updateCounter();
+  }
+  function review(){const dev=device.selectedOptions[0]?.textContent||'Belum dipilih';const count=target.value==='group'?`${selectedGroups.size} grup`:`${document.getElementById('id_contacts').selectedOptions.length} kontak + ${document.getElementById('id_manual_numbers').value.split(/\n+/).filter(Boolean).length} nomor manual`;document.getElementById('reviewBox').textContent=`Nama: ${document.getElementById('id_name').value||'—'}\nTujuan: ${target.value==='group'?'Grup WhatsApp':'Personal'}\nDevice: ${dev}\nPenerima: ${count}\nJenis: ${messageType.value==='media'?'Teks + media':'Teks saja'}\nDelay: ${document.getElementById('id_delay_seconds').value||0} detik\n\n${document.getElementById('id_body').value||'(tanpa teks)'}`;}
   function escapeHtml(v){return String(v||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
   document.querySelectorAll('[data-target]').forEach(x=>x.addEventListener('click',()=>{target.value=x.dataset.target;updateMode()}));
@@ -173,8 +191,9 @@
   document.getElementById('groupSearch').addEventListener('input',renderGroups);document.getElementById('reloadGroups').addEventListener('click',loadGroups);document.getElementById('clearGroups').addEventListener('click',()=>{selectedGroups.clear();renderGroups()});template.addEventListener('change',applyTemplate);
   document.getElementById('presetPicker').addEventListener('change',e=>{const p=presetData.find(x=>x.id===e.target.value);selectedGroups.clear();if(p)(p.group_ids||[]).forEach(id=>selectedGroups.add(id));nativePreset.value=e.target.value||'';renderGroups()});
   document.getElementById('syncGroupsButton').addEventListener('click',async()=>{if(!syncUrl)return;const csrf=form.querySelector('[name=csrfmiddlewaretoken]').value;const btn=document.getElementById('syncGroupsButton');btn.disabled=true;btn.textContent='Menyinkronkan...';try{const r=await fetch(syncUrl,{method:'POST',headers:{'X-CSRFToken':csrf,'X-Requested-With':'XMLHttpRequest'}});if(!r.ok)throw new Error('Sinkronisasi gagal. Buka menu WhatsApp & Channel untuk melihat detail.');setTimeout(loadGroups,1200);}catch(e){alert(e.message)}finally{btn.disabled=false;btn.textContent='Sinkronkan Grup Sekarang'}});
+  bodyField.addEventListener('input',updateCounter);document.getElementById('insertCta').addEventListener('click',insertCta);
   document.getElementById('savePreset').addEventListener('click',async()=>{const name=document.getElementById('quickPresetName').value.trim();const out=document.getElementById('presetResult');if(!name||!device.value||selectedGroups.size===0){out.textContent='Isi nama preset dan pilih minimal satu grup.';return}const body=new FormData();body.append('name',name);body.append('device',device.value);selectedGroups.forEach(id=>body.append('groups',id));try{const r=await fetch('{% url 'group_preset_quick_create' %}',{method:'POST',headers:{'X-CSRFToken':form.querySelector('[name=csrfmiddlewaretoken]').value},body});const data=await r.json();if(!r.ok)throw new Error(data.error||'Gagal menyimpan preset');out.textContent=`Preset “${data.name}” tersimpan (${data.count} grup).`;document.getElementById('quickPresetName').value='';await loadGroups();document.getElementById('presetPicker').value=data.id;nativePreset.value=data.id;}catch(e){out.textContent=e.message}});
-  updateMode();show(1);
+  updateCounter();updateMode();show(1);
 })();
 </script>
 {% endblock %}

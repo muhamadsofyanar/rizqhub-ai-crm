@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 from decimal import Decimal
 from functools import wraps
 
@@ -1959,9 +1960,12 @@ def broadcast_template_media(request, token):
     template = get_object_or_404(BroadcastTemplate, public_token=token, is_active=True)
     if not template.media_file:
         raise Http404("Media tidak tersedia")
-    response = FileResponse(template.media_file.open("rb"), content_type="application/octet-stream")
-    response["Content-Disposition"] = f'inline; filename="{template.media_file.name.rsplit("/", 1)[-1]}"'
+    filename = template.media_file.name.rsplit("/", 1)[-1]
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    response = FileResponse(template.media_file.open("rb"), content_type=content_type)
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
     response["Cache-Control"] = "public, max-age=300"
+    response["X-Content-Type-Options"] = "nosniff"
     response["X-Robots-Tag"] = "noindex, nofollow"
     return response
 

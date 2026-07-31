@@ -702,8 +702,8 @@ class BroadcastTemplateForm(StyledFormMixin, forms.ModelForm):
         body = (data.get("body") or "").strip()
         media_file = data.get("media_file") or getattr(self.instance, "media_file", None)
         media_url = (data.get("media_url") or "").strip()
-        if message_type == "text" and not body:
-            self.add_error("body", "Isi pesan wajib untuk template teks.")
+        if not body:
+            self.add_error("body", "Isi teks wajib. Untuk template media, teks akan dikirim sebagai caption bersama media.")
         uploaded = data.get("media_file")
         if uploaded and getattr(uploaded, "size", 0) > 25 * 1024 * 1024:
             self.add_error("media_file", "Ukuran media maksimal 25 MB untuk menjaga penyimpanan dan pengiriman stabil.")
@@ -721,7 +721,7 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
         label="Template pesan",
         help_text="Opsional. Pilih template lalu isi masih dapat diedit sebelum disimpan.",
     )
-    message_type = forms.ChoiceField(choices=[("text", "Teks"), ("media", "Media")])
+    message_type = forms.ChoiceField(choices=[("text", "Teks saja"), ("media", "Teks + media")])
     confirm_consent = forms.BooleanField(
         required=False,
         label="Saya memastikan penerima personal memiliki consent yang sah",
@@ -851,6 +851,7 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
         )
         if data.get("message_type") == "media" and not data.get("file_url") and not template_has_media:
             self.add_error("file_url", "Pilih template media, upload media pada template, atau isi URL file.")
-        if data.get("message_type") == "text" and not (data.get("body") or "").strip() and not template:
-            self.add_error("body", "Isi pesan wajib untuk pesan teks.")
+        template_has_body = bool(template and (getattr(template, "body", "") or "").strip())
+        if not (data.get("body") or "").strip() and not template_has_body:
+            self.add_error("body", "Isi teks wajib. Pada mode media, teks dikirim sebagai caption bersama file.")
         return data

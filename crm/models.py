@@ -811,7 +811,7 @@ class BroadcastTemplate(TenantOwnedModel):
     A media template may use either an uploaded file or a public HTTPS URL.
     """
 
-    TYPE_CHOICES = [("text", "Teks"), ("media", "Media")]
+    TYPE_CHOICES = [("text", "Teks saja"), ("media", "Teks + media")]
     name = models.CharField(max_length=180)
     category = models.CharField(max_length=100, blank=True)
     message_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="text")

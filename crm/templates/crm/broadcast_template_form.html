@@ -5,7 +5,7 @@
 {% block help_title %}Membuat Template{% endblock %}
 {% block help_content %}<ol><li>Beri nama yang menjelaskan tujuan pesan.</li><li>Pilih teks atau media.</li><li>Tulis isi pesan dan lihat preview.</li><li>Aktifkan hanya setelah isi benar.</li></ol>{% endblock %}
 {% block content %}
-<div class="page-head"><div><a class="back-link" href="{% url 'broadcast_template_list' %}">← Daftar Template</a><h2 class="mt-2">{{ title }}</h2><p>Contoh nama yang jelas: “Promo RUPS Juli”, “Edukasi Pendirian PT”, atau “Undangan Webinar”.</p></div></div>
+<div class="page-head"><div><a class="back-link" href="{% url 'broadcast_template_list' %}">← Daftar Template</a><h2 class="mt-2">{{ title }}</h2><p>Template dapat berupa teks saja atau teks + media. Isi teks pada template media akan menjadi caption.</p></div></div>
 <form method="post" enctype="multipart/form-data" class="template-editor-layout">{% csrf_token %}
   <section class="card card-pad template-editor-form">
     {% if form.errors %}<div class="alert alert-error">Periksa bidang yang diberi tanda merah.</div>{% endif %}
@@ -13,8 +13,14 @@
       <div class="form-row"><label for="{{ form.name.id_for_label }}">Nama template</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Nama internal, tidak dikirim kepada penerima.</span></div>
       <div class="form-row"><label for="{{ form.category.id_for_label }}">Kategori</label>{{ form.category }}{{ form.category.errors }}<span class="helptext">Contoh: Promo, Edukasi, Event, Follow-up.</span></div>
     </div>
-    <div class="form-row"><label for="{{ form.message_type.id_for_label }}">Jenis pesan</label>{{ form.message_type }}{{ form.message_type.errors }}</div>
+    <div class="form-row"><label for="{{ form.message_type.id_for_label }}">Format pengiriman</label>{{ form.message_type }}{{ form.message_type.errors }}<span class="helptext">Pilih Teks + media untuk mengirim caption dan file dalam satu pesan.</span></div>
     <div class="form-row"><div class="between flex items-center"><label for="{{ form.body.id_for_label }}">Isi pesan</label><small id="messageCounter" class="muted">0 karakter</small></div>{{ form.body }}{{ form.body.errors }}<div class="variable-chips"><button type="button" data-variable="&#123;&#123;name&#125;&#125;">Nama</button><button type="button" data-variable="&#123;&#123;phone&#125;&#125;">Nomor</button><button type="button" data-variable="&#123;&#123;email&#125;&#125;">Email</button><button type="button" data-variable="&#123;&#123;company&#125;&#125;">Perusahaan</button></div><span class="helptext">Variabel hanya digunakan untuk broadcast personal. Pada grup, tulis pesan tanpa personalisasi.</span></div>
+    <div class="surface-soft mt-2">
+      <div class="section-head-simple"><div><h3>Tautan tindakan</h3><p>Tambahkan hingga 3 tautan yang dapat diketuk penerima.</p></div></div>
+      <div class="grid grid-2"><input id="templateCtaLabel" class="form-control" placeholder="Contoh: Cek layanan"><input id="templateCtaUrl" class="form-control" placeholder="https://..."></div>
+      <div class="actions mt-1"><button type="button" class="btn" id="templateInsertCta">Tambahkan ke isi pesan</button></div>
+      <div class="mini-note">Ini adalah tautan CTA yang kompatibel. Tombol WhatsApp native belum didokumentasikan oleh API publik StarSender.</div>
+    </div>
 
     <div id="mediaFields" class="media-fields-card">
       <div class="section-head-simple"><div><h3>Media</h3><p>Upload satu file atau gunakan URL HTTPS publik.</p></div></div>
@@ -27,7 +33,7 @@
     <div class="actions"><a class="btn" href="{% url 'broadcast_template_list' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Template</button></div>
   </section>
 
-  <aside class="card card-pad template-live-preview"><div class="section-head-simple"><div><h3>Preview WhatsApp</h3><p>Tampilan perkiraan pada penerima.</p></div></div><div class="message-preview-phone large"><div id="templatePreview" class="message-preview-bubble">Tulis isi pesan untuk melihat preview.</div><div id="templateMediaPreview" class="template-preview-media" hidden>📎 Media akan dikirim bersama pesan</div></div><div class="safety-box mt-2">Preview tidak mengirim pesan. Gunakan broadcast uji ke nomor atau grup sendiri sebelum pengiriman yang lebih luas.</div></aside>
+  <aside class="card card-pad template-live-preview"><div class="section-head-simple"><div><h3>Preview WhatsApp</h3><p>Tampilan perkiraan pada penerima.</p></div></div><div class="message-preview-phone large"><div id="templatePreview" class="message-preview-bubble">Tulis isi pesan untuk melihat preview.</div><div id="templateMediaPreview" class="template-preview-media" hidden>🖼 Media akan dikirim bersama caption teks</div></div><div class="safety-box mt-2">Preview tidak mengirim pesan. Gunakan broadcast uji ke nomor atau grup sendiri sebelum pengiriman yang lebih luas.</div></aside>
 </form>
 {% endblock %}
 {% block scripts %}
@@ -39,8 +45,17 @@
   const mediaFields=document.getElementById('mediaFields');
   const mediaPreview=document.getElementById('templateMediaPreview');
   const counter=document.getElementById('messageCounter');
+  function insertCta(){
+    const label=document.getElementById('templateCtaLabel').value.trim();
+    const url=document.getElementById('templateCtaUrl').value.trim();
+    if(!label||!/^https:\/\//i.test(url)){alert('Isi nama tindakan dan URL HTTPS yang valid.');return;}
+    if(((body.value||'').match(/\n🔗 \*/g)||[]).length>=3){alert('Maksimal 3 tautan tindakan per template.');return;}
+    body.value=(body.value||'').replace(/\s+$/,'')+`\n\n🔗 *${label}*\n${url}`;
+    document.getElementById('templateCtaLabel').value='';document.getElementById('templateCtaUrl').value='';
+    body.focus();update();
+  }
   function update(){const text=body?.value||'';preview.textContent=text||'Tulis isi pesan untuk melihat preview.';counter.textContent=`${text.length} karakter`;const isMedia=type?.value==='media';mediaFields.hidden=!isMedia;mediaPreview.hidden=!isMedia;}
-  body?.addEventListener('input',update);type?.addEventListener('change',update);
+  body?.addEventListener('input',update);type?.addEventListener('change',update);document.getElementById('templateInsertCta')?.addEventListener('click',insertCta);
   document.querySelectorAll('[data-variable]').forEach(btn=>btn.addEventListener('click',()=>{const v=btn.dataset.variable;const start=body.selectionStart||body.value.length;const end=body.selectionEnd||start;body.value=body.value.slice(0,start)+v+body.value.slice(end);body.focus();body.selectionStart=body.selectionEnd=start+v.length;update();}));
   update();
 })();
