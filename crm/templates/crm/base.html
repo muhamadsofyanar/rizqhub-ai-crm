@@ -3,48 +3,154 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
   <title>{% block title %}RizqHub AI CRM{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'crm/app.css' %}">
 </head>
-<body>
+<body class="ui-simple">
+<div class="mobile-backdrop" id="mobileBackdrop" hidden></div>
 <div class="layout">
-  <aside class="sidebar">
-    <a class="brand-logo" href="{% url 'dashboard' %}"><span class="logo-mark">R</span><span>RizqHub AI</span></a>
-    <div class="workspace"><small>Workspace aktif</small><strong>{{ current_tenant.name|default:'Belum tersedia' }}</strong><div style="font-size:11px;color:#93a4bd;margin-top:3px">{{ current_membership.get_role_display }}</div></div>
-    <div class="nav">
-      <div class="nav-title">Operasional</div>
-      <a href="{% url 'dashboard' %}">◫ Dashboard</a>
-      <a href="{% url 'inbox' %}">✉ Unified Inbox {% if unread_total %}<span class="badge">{{ unread_total }}</span>{% elif handoff_count %}<span class="badge badge-red">{{ handoff_count }}</span>{% endif %}</a>
-      <a href="{% url 'contact_list' %}">◎ Kontak CRM</a>
-      <a href="{% url 'pipeline_board' %}">▥ Sales Pipeline</a>
-      <div class="nav-title">AI & Marketing</div>
-      <a href="{% url 'agent_list' %}">✦ AI Agents</a>
-      <a href="{% url 'knowledge_list' %}">▤ Knowledge Base</a>
-      {% if feature_ai_evaluation %}<a href="{% url 'ai_evaluation' %}">✓ Evaluasi AI</a>{% endif %}
-      {% if feature_automation %}<a href="{% url 'automation_list' %}">⚡ Automation & n8n</a>{% endif %}
-      {% if feature_campaign %}<a href="{% url 'campaign_list' %}">◉ Campaign Legacy</a>{% endif %}
-      <a href="{% url 'broadcast_list' %}">◉ Broadcast Center</a>
-      <a href="{% url 'starsender_center' %}">⌁ StarSender Center</a>
-      <a href="{% url 'integration_list' %}">⌁ Integrasi Legacy</a>
-      <div class="nav-title">Platform</div>
-      {% if feature_saas %}<a href="{% url 'workspace' %}">♙ Workspace & User</a>{% endif %}
-      <a href="{% url 'system_health' %}">♡ System Health {% if notification_count %}<span class="badge badge-red">{{ notification_count }}</span>{% endif %}</a>
-      {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<a href="{% url 'feature_settings' %}">⚙ Feature Settings</a>{% endif %}
-      <a href="/admin/">⚙ Admin Sistem</a>
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-head">
+      <a class="brand-logo" href="{% url 'dashboard' %}" aria-label="RizqHub AI">
+        <span class="logo-mark">R</span><span class="brand-text">RizqHub AI</span>
+      </a>
+      <button class="icon-btn sidebar-close" id="sidebarClose" type="button" aria-label="Tutup menu">×</button>
     </div>
+
+    <div class="workspace-card">
+      <span>Workspace aktif</span>
+      <strong>{{ current_tenant.name|default:'Belum tersedia' }}</strong>
+      <small>{{ current_membership.get_role_display|default:'Pengguna' }}</small>
+    </div>
+
+    <nav class="nav" aria-label="Navigasi utama">
+      <div class="nav-title">Operasional</div>
+      <a class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="nav-icon">⌂</span><span>Beranda</span></a>
+      <a class="{% if request.resolver_match.url_name == 'inbox' or request.resolver_match.url_name == 'conversation_detail' %}active{% endif %}" href="{% url 'inbox' %}"><span class="nav-icon">✉</span><span>Inbox</span>{% if unread_total %}<span class="nav-count">{{ unread_total }}</span>{% elif handoff_count %}<span class="nav-count nav-count-danger">{{ handoff_count }}</span>{% endif %}</a>
+      <a class="{% if request.resolver_match.url_name == 'contact_list' or request.resolver_match.url_name == 'contact_detail' %}active{% endif %}" href="{% url 'contact_list' %}"><span class="nav-icon">◎</span><span>Kontak & Leads</span></a>
+      <a class="{% if request.resolver_match.url_name == 'pipeline_board' %}active{% endif %}" href="{% url 'pipeline_board' %}"><span class="nav-icon">▥</span><span>Pipeline</span></a>
+      <a class="{% if 'broadcast' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'broadcast_list' %}"><span class="nav-icon">◉</span><span>Broadcast</span></a>
+
+      <div class="nav-title">AI</div>
+      <a class="{% if 'agent' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'agent_list' %}"><span class="nav-icon">✦</span><span>AI Agent</span></a>
+      <a class="{% if 'knowledge' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'knowledge_list' %}"><span class="nav-icon">▤</span><span>Pengetahuan</span></a>
+      {% if feature_ai_evaluation %}<a class="{% if request.resolver_match.url_name == 'ai_evaluation' %}active{% endif %}" href="{% url 'ai_evaluation' %}"><span class="nav-icon">✓</span><span>Evaluasi AI</span></a>{% endif %}
+
+      {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}
+      <div class="nav-title">Pengaturan</div>
+      <a class="{% if 'starsender' in request.resolver_match.url_name or 'group_' in request.resolver_match.url_name or 'whatsapp_group' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'starsender_center' %}"><span class="nav-icon">⌁</span><span>WhatsApp & Channel</span></a>
+      {% if feature_saas %}<a class="{% if request.resolver_match.url_name == 'workspace' %}active{% endif %}" href="{% url 'workspace' %}"><span class="nav-icon">♙</span><span>Tim & Hak Akses</span></a>{% endif %}
+      <a class="{% if request.resolver_match.url_name == 'feature_settings' %}active{% endif %}" href="{% url 'feature_settings' %}"><span class="nav-icon">⚙</span><span>Fitur</span></a>
+      {% endif %}
+
+      <div class="advanced-only">
+        <div class="nav-title">Mode Lanjutan</div>
+        {% if feature_automation %}<a class="{% if 'automation' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'automation_list' %}"><span class="nav-icon">⚡</span><span>Automation & n8n</span></a>{% endif %}
+        {% if feature_campaign %}<a href="{% url 'campaign_list' %}"><span class="nav-icon">◌</span><span>Campaign lama</span></a>{% endif %}
+        <a href="{% url 'integration_list' %}"><span class="nav-icon">↔</span><span>Integrasi lama</span></a>
+        {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}
+          <a class="{% if request.resolver_match.url_name == 'system_health' %}active{% endif %}" href="{% url 'system_health' %}"><span class="nav-icon">♡</span><span>Status Sistem</span>{% if notification_count %}<span class="nav-count nav-count-danger">{{ notification_count }}</span>{% endif %}</a>
+          <a href="/admin/"><span class="nav-icon">⌘</span><span>Admin Sistem</span></a>
+        {% endif %}
+      </div>
+    </nav>
+
     <div class="sidebar-bottom">
-      <div style="font-size:12px;color:#93a4bd;padding:0 12px 8px">{{ request.user.email|default:request.user.username }}</div>
-      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn" style="width:100%" type="submit">Keluar</button></form>
+      <button class="mode-toggle" id="uiModeToggle" type="button">
+        <span class="mode-toggle-icon">◐</span>
+        <span><strong id="uiModeLabel">Mode Sederhana</strong><small id="uiModeHint">Tampilkan menu inti</small></span>
+      </button>
+      <div class="signed-user">{{ request.user.email|default:request.user.username }}</div>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-ghost btn-full" type="submit">Keluar</button></form>
     </div>
   </aside>
+
   <main class="main">
-    <header class="topbar"><h1>{% block topbar %}AI CRM & Marketing{% endblock %}</h1><div class="user-chip"><span class="muted">Asia/Jakarta</span><span class="avatar">{{ request.user.username|first|upper }}</span></div></header>
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn mobile-menu" id="sidebarOpen" type="button" aria-label="Buka menu">☰</button>
+        <div>
+          <h1>{% block topbar %}RizqHub AI{% endblock %}</h1>
+          <span class="topbar-subtitle">{% block topbar_subtitle %}{% endblock %}</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="help-button" id="helpButton" type="button">? <span>Bantuan</span></button>
+        <span class="timezone-chip advanced-only">Asia/Jakarta</span>
+        <span class="avatar">{{ request.user.username|first|upper }}</span>
+      </div>
+    </header>
+
     <div class="content">
-      {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-error{% else %}alert-success{% endif %}">{{ message }}</div>{% endfor %}
+      {% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-error{% elif message.tags == 'warning' %}alert-warning{% else %}alert-success{% endif %}">{{ message }}</div>{% endfor %}
       {% block content %}{% endblock %}
     </div>
   </main>
 </div>
+
+<aside class="help-drawer" id="helpDrawer" aria-hidden="true">
+  <div class="help-drawer-head">
+    <div><small>Panduan halaman</small><h2>{% block help_title %}RizqHub AI{% endblock %}</h2></div>
+    <button class="icon-btn" id="helpClose" type="button" aria-label="Tutup bantuan">×</button>
+  </div>
+  <div class="help-drawer-body">
+    {% block help_content %}
+      <p>Gunakan menu di kiri untuk berpindah halaman. Mode Sederhana menampilkan pekerjaan harian; Mode Lanjutan menampilkan konfigurasi teknis.</p>
+    {% endblock %}
+  </div>
+</aside>
+<div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+
+<script>
+(() => {
+  const body = document.body;
+  const toggle = document.getElementById('uiModeToggle');
+  const label = document.getElementById('uiModeLabel');
+  const hint = document.getElementById('uiModeHint');
+  const storageKey = 'rizqhub-ui-mode';
+  const savedMode = localStorage.getItem(storageKey) || 'simple';
+
+  function applyMode(mode) {
+    const advanced = mode === 'advanced';
+    body.classList.toggle('ui-advanced', advanced);
+    body.classList.toggle('ui-simple', !advanced);
+    label.textContent = advanced ? 'Mode Lanjutan' : 'Mode Sederhana';
+    hint.textContent = advanced ? 'Konfigurasi teknis terlihat' : 'Tampilkan menu inti';
+    toggle.setAttribute('aria-pressed', advanced ? 'true' : 'false');
+  }
+  applyMode(savedMode);
+  toggle?.addEventListener('click', () => {
+    const next = body.classList.contains('ui-advanced') ? 'simple' : 'advanced';
+    localStorage.setItem(storageKey, next);
+    applyMode(next);
+  });
+
+  const sidebar = document.getElementById('appSidebar');
+  const mobileBackdrop = document.getElementById('mobileBackdrop');
+  function setSidebar(open) {
+    sidebar.classList.toggle('mobile-open', open);
+    mobileBackdrop.hidden = !open;
+  }
+  document.getElementById('sidebarOpen')?.addEventListener('click', () => setSidebar(true));
+  document.getElementById('sidebarClose')?.addEventListener('click', () => setSidebar(false));
+  mobileBackdrop?.addEventListener('click', () => setSidebar(false));
+
+  const drawer = document.getElementById('helpDrawer');
+  const drawerBackdrop = document.getElementById('drawerBackdrop');
+  function setHelp(open) {
+    drawer.classList.toggle('open', open);
+    drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+    drawerBackdrop.hidden = !open;
+  }
+  document.getElementById('helpButton')?.addEventListener('click', () => setHelp(true));
+  document.getElementById('helpClose')?.addEventListener('click', () => setHelp(false));
+  drawerBackdrop?.addEventListener('click', () => setHelp(false));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { setHelp(false); setSidebar(false); }
+  });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

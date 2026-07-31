@@ -1,4 +1,129 @@
-{% extends 'crm/base.html' %}{% block topbar %}Buat Broadcast{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Buat Broadcast</h2><p>Form membuat draft. Tidak ada pesan yang dikirim sebelum halaman konfirmasi.</p></div></div>
-<div class="card card-pad"><form method="post">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<div class="form-row"><label>{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}<button class="btn btn-primary" type="submit">Simpan draft & tinjau penerima</button></form></div>
+{% extends 'crm/base.html' %}
+{% block title %}Buat Broadcast — RizqHub AI CRM{% endblock %}
+{% block topbar %}Buat Broadcast{% endblock %}
+{% block topbar_subtitle %}Wizard pengiriman aman{% endblock %}
+{% block help_title %}Wizard Broadcast{% endblock %}
+{% block help_content %}<p>Isi langkah secara berurutan. Tombol terakhir hanya membuat draft. Pesan baru dapat dikirim setelah Anda meninjau daftar penerima dan mengetik <strong>KIRIM</strong>.</p>{% endblock %}
+{% block content %}
+<div class="page-head"><div><h2>Buat Broadcast</h2><p>Enam langkah sederhana. Tidak ada pesan yang dikirim dari halaman ini.</p></div><a class="btn" href="{% url 'broadcast_list' %}">Batal</a></div>
+{% if form.errors %}<div class="field-error-summary"><strong>Beberapa data belum benar.</strong><div>Periksa pesan merah pada setiap langkah sebelum menyimpan draft.</div>{{ form.non_field_errors }}</div>{% endif %}
+<form method="post" id="broadcastWizardForm">{% csrf_token %}
+  <div class="wizard-layout">
+    <aside class="card wizard-nav" id="wizardNav">
+      <button type="button" class="wizard-step-link active" data-step-link="1"><span class="wizard-number">1</span><span><strong>Tujuan</strong><small>Personal atau grup</small></span></button>
+      <button type="button" class="wizard-step-link" data-step-link="2"><span class="wizard-number">2</span><span><strong>Channel</strong><small>Pilih device</small></span></button>
+      <button type="button" class="wizard-step-link" data-step-link="3"><span class="wizard-number">3</span><span><strong>Penerima</strong><small>Kontak atau preset</small></span></button>
+      <button type="button" class="wizard-step-link" data-step-link="4"><span class="wizard-number">4</span><span><strong>Pesan</strong><small>Isi dan media</small></span></button>
+      <button type="button" class="wizard-step-link" data-step-link="5"><span class="wizard-number">5</span><span><strong>Jadwal & Izin</strong><small>Delay dan consent</small></span></button>
+      <button type="button" class="wizard-step-link" data-step-link="6"><span class="wizard-number">6</span><span><strong>Tinjau</strong><small>Simpan draft</small></span></button>
+    </aside>
+
+    <section class="card wizard-panel">
+      <div class="visually-hidden">{{ form.target_type }}{{ form.message_type }}</div>
+
+      <div class="wizard-step active" data-step="1">
+        <h3>Siapa yang akan menerima pesan?</h3><p>Pilih satu jenis tujuan. Anda dapat membuat broadcast lain untuk jenis yang berbeda.</p>
+        {{ form.target_type.errors }}
+        <div class="choice-cards">
+          <button class="choice-card" type="button" data-target-choice="personal"><input type="radio" tabindex="-1"><strong>Personal</strong><small>Kirim ke kontak CRM atau nomor manual yang memiliki consent.</small></button>
+          <button class="choice-card" type="button" data-target-choice="group"><input type="radio" tabindex="-1"><strong>Grup WhatsApp</strong><small>Pilih satu atau banyak grup, kategori, atau preset.</small></button>
+        </div>
+        <div class="wizard-actions"><span></span><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
+      </div>
+
+      <div class="wizard-step" data-step="2">
+        <h3>Pilih device pengiriman</h3><p>Pesan akan dikirim melalui nomor WhatsApp ini. Hanya device yang pengirimannya aktif yang ditampilkan.</p>
+        <div class="form-row"><label>{{ form.device.label }}</label>{{ form.device }}{{ form.device.errors }}<span class="helptext">Untuk grup, semua grup tujuan harus berasal dari device yang sama.</span></div>
+        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
+      </div>
+
+      <div class="wizard-step" data-step="3">
+        <h3>Pilih penerima</h3><p id="recipientHelp">Pilih kontak atau grup yang akan dimasukkan ke draft.</p>
+        <div id="personalRecipients">
+          <div class="grid grid-2"><div class="form-row"><label>{{ form.contacts.label }}</label>{{ form.contacts }}{{ form.contacts.errors }}<span class="helptext">Daftar hanya menampilkan kontak yang memiliki marketing consent.</span></div><div class="form-row"><label>{{ form.manual_numbers.label }}</label>{{ form.manual_numbers }}{{ form.manual_numbers.errors }}{% if form.manual_numbers.help_text %}<span class="helptext">{{ form.manual_numbers.help_text }}</span>{% endif %}</div></div>
+        </div>
+        <div id="groupRecipients">
+          <div class="form-row"><label>Preset tersimpan</label>{{ form.preset }}{{ form.preset.errors }}<span class="helptext">Opsional. Preset dapat digabungkan dengan pilihan grup manual.</span></div>
+          <div class="form-row"><label>{{ form.groups.label }}</label>{{ form.groups }}{{ form.groups.errors }}<span class="helptext">Gunakan Ctrl/Command untuk memilih lebih dari satu grup.</span></div>
+          <a class="btn btn-sm" href="{% url 'group_preset_list' %}" target="_blank">Kelola kategori & preset</a>
+        </div>
+        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
+      </div>
+
+      <div class="wizard-step" data-step="4">
+        <h3>Susun pesan</h3><p>Gunakan pesan yang jelas, relevan, dan tidak menyesatkan.</p>
+        <div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Nama internal agar broadcast mudah ditemukan.</span></div>
+        <div class="form-row"><label>Jenis pesan</label><div class="choice-cards"><button class="choice-card" type="button" data-message-choice="text"><input type="radio" tabindex="-1"><strong>Teks</strong><small>Pesan tanpa lampiran.</small></button><button class="choice-card" type="button" data-message-choice="media"><input type="radio" tabindex="-1"><strong>Media</strong><small>Pesan dengan URL file publik.</small></button></div>{{ form.message_type.errors }}</div>
+        <div class="form-row"><label>{{ form.body.label }}</label>{{ form.body }}{{ form.body.errors }}<span class="helptext">Preview final ditampilkan pada langkah terakhir.</span></div>
+        <div class="form-row" id="mediaField"><label>{{ form.file_url.label }}</label>{{ form.file_url }}{{ form.file_url.errors }}<span class="helptext">Gunakan URL HTTPS yang dapat dibuka tanpa login.</span></div>
+        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Berikutnya</button></div>
+      </div>
+
+      <div class="wizard-step" data-step="5">
+        <h3>Atur jadwal dan keamanan</h3><p>Pengiriman bertahap membantu menjaga stabilitas device dan mengurangi risiko spam.</p>
+        <div class="grid grid-2"><div class="form-row"><label>{{ form.delay_seconds.label }}</label>{{ form.delay_seconds }}{{ form.delay_seconds.errors }}<span class="helptext">Minimal 30 detik antar tujuan.</span></div><div class="form-row"><label>{{ form.scheduled_at.label }}</label>{{ form.scheduled_at }}{{ form.scheduled_at.errors }}<span class="helptext">Kosongkan untuk menyiapkan pengiriman segera setelah konfirmasi.</span></div></div>
+        <div id="personalConsent" class="safety-box">{{ form.confirm_consent }} <label for="{{ form.confirm_consent.id_for_label }}">{{ form.confirm_consent.label }}</label>{{ form.confirm_consent.errors }}</div>
+        <div id="groupConsent" class="safety-box">{{ form.confirm_group_permission }} <label for="{{ form.confirm_group_permission.id_for_label }}">{{ form.confirm_group_permission.label }}</label>{{ form.confirm_group_permission.errors }}</div>
+        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button type="button" class="btn btn-primary" data-next>Tinjau Draft</button></div>
+      </div>
+
+      <div class="wizard-step" data-step="6">
+        <h3>Tinjau draft</h3><p>Periksa kembali sebelum menyimpan. Halaman berikutnya akan menampilkan daftar penerima lengkap.</p>
+        <div class="surface-soft"><dl class="review-grid"><dt>Nama</dt><dd id="reviewName">—</dd><dt>Tujuan</dt><dd id="reviewTarget">—</dd><dt>Device</dt><dd id="reviewDevice">—</dd><dt>Penerima</dt><dd id="reviewRecipients">—</dd><dt>Jenis pesan</dt><dd id="reviewMessageType">—</dd><dt>Delay</dt><dd id="reviewDelay">—</dd><dt>Jadwal</dt><dd id="reviewSchedule">—</dd></dl></div>
+        <div class="surface-soft mt-2"><div class="eyebrow">Preview Pesan</div><div id="reviewBody" style="white-space:pre-wrap;margin-top:8px">—</div></div>
+        <div class="safety-box mt-2"><strong>Aman:</strong> tombol di bawah hanya menyimpan draft. Pesan belum dikirim.</div>
+        <div class="wizard-actions"><button type="button" class="btn" data-prev>Kembali</button><button class="btn btn-primary" type="submit">Simpan Draft & Periksa Penerima</button></div>
+      </div>
+    </section>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const form=document.getElementById('broadcastWizardForm');
+  const target=document.getElementById('id_target_type');
+  const messageType=document.getElementById('id_message_type');
+  const steps=[...document.querySelectorAll('[data-step]')];
+  const links=[...document.querySelectorAll('[data-step-link]')];
+  let current=1;
+  const queryTarget=new URLSearchParams(location.search).get('target');
+  if(queryTarget&&['personal','group'].includes(queryTarget))target.value=queryTarget;
+  if(!target.value)target.value='personal'; if(!messageType.value)messageType.value='text';
+
+  function show(step){current=Math.max(1,Math.min(6,step));steps.forEach(el=>el.classList.toggle('active',Number(el.dataset.step)===current));links.forEach(el=>{const n=Number(el.dataset.stepLink);el.classList.toggle('active',n===current);el.classList.toggle('done',n<current);});if(current===6)updateReview();window.scrollTo({top:0,behavior:'smooth'});}
+  function selectedText(id){const el=document.getElementById(id);return el?.selectedOptions?.[0]?.textContent?.trim()||'Belum dipilih';}
+  function selectedCount(id){const el=document.getElementById(id);return el?[...el.selectedOptions].length:0;}
+  function updateChoices(){
+    document.querySelectorAll('[data-target-choice]').forEach(btn=>{const selected=btn.dataset.targetChoice===target.value;btn.classList.toggle('selected',selected);btn.querySelector('input').checked=selected;});
+    document.querySelectorAll('[data-message-choice]').forEach(btn=>{const selected=btn.dataset.messageChoice===messageType.value;btn.classList.toggle('selected',selected);btn.querySelector('input').checked=selected;});
+    const personal=target.value==='personal';document.getElementById('personalRecipients').hidden=!personal;document.getElementById('groupRecipients').hidden=personal;document.getElementById('personalConsent').hidden=!personal;document.getElementById('groupConsent').hidden=personal;document.getElementById('recipientHelp').textContent=personal?'Pilih kontak consent atau masukkan nomor manual.':'Pilih grup secara langsung atau gunakan preset tersimpan.';
+    document.getElementById('mediaField').hidden=messageType.value!=='media';
+  }
+  function basicValid(step){
+    if(step===1&&!target.value){alert('Pilih Personal atau Grup.');return false;}
+    if(step===2&&!document.getElementById('id_device').value){alert('Pilih device pengiriman.');return false;}
+    if(step===4&&!document.getElementById('id_name').value.trim()){alert('Isi nama broadcast.');return false;}
+    return true;
+  }
+  function updateReview(){
+    document.getElementById('reviewName').textContent=document.getElementById('id_name').value||'—';
+    document.getElementById('reviewTarget').textContent=target.value==='group'?'Grup WhatsApp':'Personal';
+    document.getElementById('reviewDevice').textContent=selectedText('id_device');
+    const manual=document.getElementById('id_manual_numbers').value.split(/\n+/).filter(Boolean).length;
+    const recipients=target.value==='group'?`${selectedCount('id_groups')} grup dipilih${document.getElementById('id_preset').value?' + preset':''}`:`${selectedCount('id_contacts')} kontak + ${manual} nomor manual`;
+    document.getElementById('reviewRecipients').textContent=recipients;
+    document.getElementById('reviewMessageType').textContent=messageType.value==='media'?'Media':'Teks';
+    document.getElementById('reviewDelay').textContent=`${document.getElementById('id_delay_seconds').value||0} detik`;
+    document.getElementById('reviewSchedule').textContent=document.getElementById('id_scheduled_at').value||'Belum dijadwalkan';
+    document.getElementById('reviewBody').textContent=document.getElementById('id_body').value||'(tanpa teks)';
+  }
+  document.querySelectorAll('[data-target-choice]').forEach(btn=>btn.addEventListener('click',()=>{target.value=btn.dataset.targetChoice;updateChoices();}));
+  document.querySelectorAll('[data-message-choice]').forEach(btn=>btn.addEventListener('click',()=>{messageType.value=btn.dataset.messageChoice;updateChoices();}));
+  document.querySelectorAll('[data-next]').forEach(btn=>btn.addEventListener('click',()=>{if(basicValid(current))show(current+1);}));
+  document.querySelectorAll('[data-prev]').forEach(btn=>btn.addEventListener('click',()=>show(current-1)));
+  links.forEach(btn=>btn.addEventListener('click',()=>show(Number(btn.dataset.stepLink))));
+  updateChoices();show(1);
+})();
+</script>
 {% endblock %}

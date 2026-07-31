@@ -394,6 +394,9 @@ class StarSenderAccountForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["name"].label = "Nama akun"
+        self.fields["is_active"].label = "Akun aktif"
+        self.fields["auto_sync_devices"].label = "Sinkronkan device otomatis"
         if self.instance.pk and self.instance.encrypted_account_key:
             self.fields["account_api_key"].widget.attrs["placeholder"] = (
                 "Credential tersimpan — kosongkan untuk mempertahankan"
@@ -446,6 +449,14 @@ class StarSenderDeviceForm(StyledFormMixin, forms.ModelForm):
     def __init__(self, *args, tenant=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.tenant = tenant
+        self.fields["name"].label = "Nama device"
+        self.fields["phone_number"].label = "Nomor WhatsApp"
+        self.fields["brand"].label = "Brand / Bisnis"
+        self.fields["agent"].label = "AI Agent"
+        self.fields["send_enabled"].label = "Aktifkan pengiriman"
+        self.fields["group_sync_enabled"].label = "Aktifkan sinkronisasi grup"
+        self.fields["is_default"].label = "Device utama"
+        self.fields["is_fallback"].label = "Device cadangan"
         self.fields["brand"].queryset = Brand.objects.filter(tenant=tenant, is_active=True)
         self.fields["agent"].queryset = Agent.objects.filter(tenant=tenant, is_active=True)
         if self.instance.pk and self.instance.encrypted_device_key:
@@ -664,6 +675,14 @@ class BroadcastForm(StyledFormMixin, forms.ModelForm):
     def __init__(self, *args, tenant=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.tenant = tenant
+        self.fields["name"].label = "Nama broadcast"
+        self.fields["target_type"].label = "Jenis tujuan"
+        self.fields["device"].label = "Device WhatsApp"
+        self.fields["preset"].label = "Preset grup"
+        self.fields["body"].label = "Isi pesan"
+        self.fields["file_url"].label = "URL media"
+        self.fields["delay_seconds"].label = "Delay antar tujuan (detik)"
+        self.fields["scheduled_at"].label = "Jadwal pengiriman"
         self.fields["device"].queryset = StarSenderDevice.objects.filter(
             tenant=tenant, send_enabled=True
         ).select_related("account")

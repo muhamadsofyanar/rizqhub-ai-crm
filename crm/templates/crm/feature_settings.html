@@ -1,17 +1,20 @@
-{% extends 'crm/base.html' %}{% block topbar %}Feature Settings{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Feature Settings</h2><p>Aktifkan atau nonaktifkan modul dari database tanpa redeploy.</p></div></div>
-<div class="alert alert-success">Perubahan berlaku pada request dan job berikutnya. Fitur berisiko memerlukan konfirmasi <strong>AKTIFKAN</strong>.</div>
-<div class="grid grid-2">
+{% extends 'crm/base.html' %}
+{% block title %}Fitur — RizqHub AI CRM{% endblock %}
+{% block topbar %}Fitur{% endblock %}
+{% block topbar_subtitle %}Aktifkan modul tanpa redeploy{% endblock %}
+{% block help_title %}Pengaturan Fitur{% endblock %}
+{% block help_content %}<p>Fitur aman dapat diaktifkan langsung. Fitur yang dapat mengirim pesan massal atau melakukan tindakan otomatis memerlukan konfirmasi <strong>AKTIFKAN</strong>.</p><p>Aktivasi berlaku pada request atau job berikutnya dan tidak membutuhkan redeploy.</p>{% endblock %}
+{% block content %}
+<div class="page-head"><div><h2>Pengaturan Fitur</h2><p>Mode Sederhana menampilkan nama dan fungsi. Detail teknis tersedia pada Mode Lanjutan.</p></div></div>
+<div class="alert alert-success">Perubahan berlaku tanpa redeploy. Fitur pengiriman massal tetap dilindungi konfirmasi tambahan pada saat eksekusi.</div>
+<div class="feature-grid">
 {% for flag in flags %}
-<div class="card card-pad">
-  <div class="page-head" style="margin-bottom:10px"><div><h3 class="mt-0">{{ flag.label }}</h3><p>{{ flag.description }}</p></div><span class="badge {% if flag.enabled %}badge-green{% else %}badge-red{% endif %}">{% if flag.enabled %}Aktif{% else %}Nonaktif{% endif %}</span></div>
-  {% if flag.is_dangerous %}<p class="muted"><strong>Fitur berisiko:</strong> dapat mengirim pesan atau mengubah data secara otomatis.</p>{% endif %}
-  <form method="post" action="{% url 'feature_toggle' flag.key %}">{% csrf_token %}
-    <input type="hidden" name="enabled" value="{% if flag.enabled %}false{% else %}true{% endif %}">
-    {% if flag.is_dangerous and not flag.enabled %}<div class="form-row"><label>Ketik AKTIFKAN</label><input class="form-control" name="confirm" autocomplete="off"></div>{% endif %}
-    <button class="btn {% if flag.enabled %}btn-danger{% else %}btn-primary{% endif %}" type="submit">{% if flag.enabled %}Nonaktifkan{% else %}Aktifkan{% endif %}</button>
-  </form>
-</div>
+<section class="card feature-card">
+  <div><div class="flex items-center gap"><h3>{{ flag.label }}</h3>{% if flag.is_dangerous %}<span class="risk-label">Perlu perhatian</span>{% endif %}</div><p>{{ flag.description }}</p><div class="advanced-only mini-note mt-2">Key: {{ flag.key }}</div></div>
+  <div><span class="badge {% if flag.enabled %}badge-green{% else %}badge-gray{% endif %}">{% if flag.enabled %}Aktif{% else %}Nonaktif{% endif %}</span>
+    <form class="switch-form mt-2" method="post" action="{% url 'feature_toggle' flag.key %}">{% csrf_token %}<input type="hidden" name="enabled" value="{% if flag.enabled %}false{% else %}true{% endif %}">{% if flag.is_dangerous and not flag.enabled %}<input class="form-control" style="width:120px" name="confirm" autocomplete="off" placeholder="AKTIFKAN">{% endif %}<button class="btn btn-sm {% if flag.enabled %}btn-danger{% else %}btn-primary{% endif %}" type="submit">{% if flag.enabled %}Matikan{% else %}Aktifkan{% endif %}</button></form>
+  </div>
+</section>
 {% endfor %}
 </div>
 {% endblock %}

@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.1.0 — Simple Operations UX
+
+- Menyederhanakan navigasi utama dan menambahkan Mode Sederhana/Mode Lanjutan.
+- Mendesain ulang Inbox menjadi tiga kolom dengan satu status percakapan yang jelas.
+- Menambahkan status Menunggu Pelanggan tanpa mematikan kelanjutan AI.
+- Menambahkan filter dan pencarian Inbox.
+- Mengubah Broadcast menjadi wizard enam langkah yang selalu membuat draft terlebih dahulu.
+- Mengubah StarSender Center menjadi setup wizard multi-device.
+- Menambahkan onboarding checklist, bantuan kontekstual, dan dashboard berbasis tindakan.
+- Tidak mengubah skema database.
+
+
 ## V4 Consolidated RC1 — final safety pass
 
 - Menambahkan role guard untuk operasi inbox, StarSender Center, preset, dan broadcast.

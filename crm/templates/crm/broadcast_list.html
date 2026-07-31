@@ -1,7 +1,26 @@
-{% extends 'crm/base.html' %}{% block topbar %}Broadcast Center{% endblock %}{% block content %}
-<div class="page-head"><div><h2>Broadcast Center</h2><p>Kirim personal atau grup melalui device yang dipilih, dengan preview, delay, audit, dan pembatalan antrean.</p></div><a class="btn btn-primary" href="{% url 'broadcast_create' %}">Buat broadcast</a></div>
-<div class="alert alert-success">Pengiriman massal dinonaktifkan secara default. Draft tetap dapat disiapkan; aktivasi dilakukan di Feature Settings.</div>
-<div class="card"><table><thead><tr><th>Nama</th><th>Target</th><th>Device</th><th>Status</th><th>Progres</th><th>Dibuat</th></tr></thead><tbody>
-{% for item in broadcasts %}<tr><td><a href="{% url 'broadcast_detail' item.pk %}"><strong>{{ item.name }}</strong></a></td><td>{{ item.get_target_type_display }}</td><td>{{ item.device }}</td><td><span class="badge">{{ item.get_status_display }}</span></td><td>{{ item.sent_count }} terkirim · {{ item.failed_count }} gagal · {{ item.total_count }} total</td><td>{{ item.created_at|date:'d M Y H:i' }}</td></tr>{% empty %}<tr><td colspan="6">Belum ada broadcast.</td></tr>{% endfor %}
-</tbody></table></div>
+{% extends 'crm/base.html' %}
+{% block title %}Broadcast — RizqHub AI CRM{% endblock %}
+{% block topbar %}Broadcast{% endblock %}
+{% block topbar_subtitle %}Kirim personal atau grup dengan aman{% endblock %}
+{% block help_title %}Broadcast{% endblock %}
+{% block help_content %}
+<p>Broadcast dibuat sebagai <strong>draft</strong> terlebih dahulu. Tidak ada pesan terkirim saat Anda menyelesaikan wizard.</p>
+<ol><li>Pilih personal atau grup.</li><li>Pilih device WhatsApp.</li><li>Pilih penerima.</li><li>Susun pesan.</li><li>Atur jadwal dan izin.</li><li>Tinjau draft, lalu konfirmasi KIRIM pada halaman berikutnya.</li></ol>
+<p class="safety-box">Gunakan hanya untuk penerima yang memberi izin. Delay minimal 30 detik dan pembatasan penerima tetap diberlakukan.</p>
+{% endblock %}
+{% block content %}
+<div class="page-head"><div><h2>Broadcast</h2><p>Semua pengiriman memakai preview, antrean bertahap, audit, dan tombol pembatalan.</p></div><a class="btn btn-primary" href="{% url 'broadcast_create' %}">+ Buat Broadcast</a></div>
+<div class="quick-actions">
+  <a class="quick-action" href="{% url 'broadcast_create' %}?target=personal"><span class="quick-action-icon">◎</span><span><strong>Kirim Personal</strong><small>Pilih kontak consent atau masukkan nomor yang sudah memberi izin.</small></span></a>
+  <a class="quick-action" href="{% url 'broadcast_create' %}?target=group"><span class="quick-action-icon">◉</span><span><strong>Kirim ke Grup</strong><small>Pilih banyak grup, kategori, atau preset tersimpan.</small></span></a>
+  <a class="quick-action" href="{% url 'group_preset_list' %}"><span class="quick-action-icon">▦</span><span><strong>Preset Grup</strong><small>Simpan kumpulan grup agar dapat dipakai kembali.</small></span></a>
+  <a class="quick-action" href="{% url 'starsender_center' %}"><span class="quick-action-icon">⌁</span><span><strong>Periksa Device</strong><small>Pastikan device connected dan pengiriman aktif.</small></span></a>
+</div>
+<div class="alert alert-warning mt-2">Pengiriman massal tetap nonaktif sampai Owner mengaktifkan Broadcast Personal atau Broadcast Grup melalui menu <strong>Fitur</strong>. Anda tetap dapat menyiapkan draft dengan aman.</div>
+<section class="card mt-2">
+  <div class="card-head"><div><h3>Riwayat Broadcast</h3><small class="muted">Klik nama untuk melihat penerima dan progres.</small></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Nama</th><th>Tujuan</th><th>Device</th><th>Status</th><th>Progres</th><th>Dibuat</th></tr></thead><tbody>
+  {% for item in broadcasts %}<tr><td><a href="{% url 'broadcast_detail' item.pk %}"><strong>{{ item.name }}</strong></a></td><td>{{ item.get_target_type_display }}</td><td>{{ item.device }}</td><td><span class="badge {% if item.status == 'completed' %}badge-green{% elif item.status == 'failed' %}badge-red{% elif item.status == 'draft' %}badge-gray{% else %}badge-yellow{% endif %}">{{ item.get_status_display }}</span></td><td>{{ item.sent_count }}/{{ item.total_count }} terkirim{% if item.failed_count %} · {{ item.failed_count }} gagal{% endif %}</td><td>{{ item.created_at|date:'d M Y H:i' }}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Belum ada broadcast. Mulai dari tombol Buat Broadcast.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
 {% endblock %}

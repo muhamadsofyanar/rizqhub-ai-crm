@@ -201,6 +201,51 @@ def dashboard(request):
         "agents": Agent.objects.filter(tenant=tenant)
         .annotate(conversation_count=Count("conversations"))[:8],
     }
+    setup_checks = [
+        {
+            "key": "starsender",
+            "label": "Akun StarSender terhubung",
+            "done": StarSenderAccount.objects.filter(tenant=tenant, is_active=True).exists(),
+            "url": reverse("starsender_center"),
+        },
+        {
+            "key": "device",
+            "label": "Device WhatsApp dipetakan",
+            "done": StarSenderDevice.objects.filter(
+                tenant=tenant, send_enabled=True, brand__isnull=False, agent__isnull=False
+            ).exists(),
+            "url": reverse("starsender_center"),
+        },
+        {
+            "key": "agent",
+            "label": "AI Agent aktif",
+            "done": Agent.objects.filter(tenant=tenant, is_active=True).exists(),
+            "url": reverse("agent_list"),
+        },
+        {
+            "key": "knowledge",
+            "label": "Pengetahuan bisnis tersedia",
+            "done": KnowledgeEntry.objects.filter(tenant=tenant, is_active=True).exists(),
+            "url": reverse("knowledge_list"),
+        },
+        {
+            "key": "inbox",
+            "label": "Pesan masuk sudah diterima",
+            "done": conversations.exists(),
+            "url": reverse("inbox"),
+        },
+    ]
+    setup_done = sum(1 for item in setup_checks if item["done"])
+    context.update(
+        {
+            "setup_checks": setup_checks,
+            "setup_percent": int((setup_done / len(setup_checks)) * 100),
+            "setup_done": setup_done,
+            "setup_total": len(setup_checks),
+            "knowledge_count": KnowledgeEntry.objects.filter(tenant=tenant, is_active=True).count(),
+            "connected_devices": StarSenderDevice.objects.filter(tenant=tenant, connection_status="connected").count(),
+        }
+    )
     return render(request, "crm/dashboard.html", context)
 
 
@@ -427,6 +472,21 @@ def knowledge_toggle(request, pk):
     return redirect("knowledge_list")
 
 
+def _conversation_ui_state(conversation):
+    """Return one human-readable state for the operational inbox."""
+    if conversation.status == "closed":
+        return {"key": "done", "label": "Selesai", "css": "status-done"}
+    if conversation.needs_handoff:
+        return {"key": "help", "label": "Perlu Admin", "css": "status-help"}
+    if conversation.assigned_to_id and not conversation.ai_enabled:
+        return {"key": "admin", "label": "Admin Menangani", "css": "status-admin"}
+    if conversation.status == "pending":
+        return {"key": "wait", "label": "Menunggu Pelanggan", "css": "status-wait"}
+    if conversation.ai_enabled:
+        return {"key": "ai", "label": "AI Menangani", "css": "status-ai"}
+    return {"key": "admin", "label": "Belum Ditangani", "css": "status-admin"}
+
+
 def _inbox_queryset(request):
     latest_message = Message.objects.filter(conversation=OuterRef("pk")).order_by(
         "-created_at"
@@ -444,6 +504,24 @@ def _inbox_queryset(request):
         qs = qs.filter(status=status)
     if request.GET.get("handoff") == "1":
         qs = qs.filter(needs_handoff=True)
+    inbox_filter = request.GET.get("filter", "")
+    if inbox_filter == "unread":
+        qs = qs.filter(unread_count__gt=0)
+    elif inbox_filter == "admin":
+        qs = qs.filter(Q(needs_handoff=True) | Q(ai_enabled=False)).exclude(status="closed")
+    elif inbox_filter == "ai":
+        qs = qs.filter(ai_enabled=True, needs_handoff=False).exclude(status="closed")
+    elif inbox_filter == "group":
+        qs = qs.filter(channel__in=["group", "whatsapp_group"])
+    elif inbox_filter == "personal":
+        qs = qs.exclude(channel__in=["group", "whatsapp_group"])
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(contact__name__icontains=q)
+            | Q(contact__phone__icontains=q)
+            | Q(latest_message_body__icontains=q)
+        )
     return qs
 
 
@@ -455,6 +533,8 @@ def inbox(request):
         {
             "conversations": _inbox_queryset(request)[:200],
             "selected": None,
+            "inbox_filter": request.GET.get("filter", ""),
+            "q": request.GET.get("q", ""),
             "live_poll_ms": int(settings.LIVE_INBOX_POLL_SECONDS * 1000),
         },
     )
@@ -467,6 +547,7 @@ def inbox_conversations_api(request):
     payload = []
     for conversation in rows:
         display_name = str(conversation.contact)
+        ui_state = _conversation_ui_state(conversation)
         payload.append(
             {
                 "id": str(conversation.id),
@@ -492,6 +573,9 @@ def inbox_conversations_api(request):
                     if conversation.assigned_to
                     else ""
                 ),
+                "ui_status": ui_state["label"],
+                "ui_status_key": ui_state["key"],
+                "ui_status_class": ui_state["css"],
             }
         )
     return JsonResponse(
@@ -570,11 +654,14 @@ def conversation_detail(request, pk):
                 tenant=request.tenant,
                 initial={"assigned_to": conversation.assigned_to},
             ),
-            "conversations": Conversation.objects.filter(tenant=request.tenant)
-            .select_related("contact", "brand", "agent")[:100],
+            "conversations": _inbox_queryset(request)[:100],
             "selected": conversation,
+            "conversation_ui_state": _conversation_ui_state(conversation),
+            "inbox_filter": request.GET.get("filter", ""),
+            "q": request.GET.get("q", ""),
             "conversation_control": get_control(conversation),
             "contact_memory": getattr(conversation.contact, "memory", None),
+            "active_deal": conversation.contact.deals.filter(status="open").select_related("stage", "pipeline").first(),
             "live_poll_ms": int(settings.LIVE_INBOX_POLL_SECONDS * 1000),
         },
     )
@@ -584,6 +671,7 @@ def conversation_detail(request, pk):
 @require_GET
 def conversation_messages_api(request, pk):
     conversation = get_object_or_404(Conversation, pk=pk, tenant=request.tenant)
+    control = get_control(conversation)
     rows = conversation.messages.select_related("sender_user").prefetch_related("reviews").order_by("created_at")
     limit = min(max(int(request.GET.get("limit", 200)), 20), 500)
     rows = list(rows[max(0, rows.count() - limit) :])
@@ -620,6 +708,10 @@ def conversation_messages_api(request, pk):
             "messages": payload,
             "conversation": {
                 "status": conversation.status,
+                "ui_status": _conversation_ui_state(conversation)["label"],
+                "ui_status_key": _conversation_ui_state(conversation)["key"],
+                "ui_status_class": _conversation_ui_state(conversation)["css"],
+                "last_confidence": control.last_confidence,
                 "ai_enabled": conversation.ai_enabled,
                 "needs_handoff": conversation.needs_handoff,
                 "handoff_reason": conversation.handoff_reason,
@@ -647,6 +739,11 @@ def conversation_action(request, pk, action):
         conv.handoff_reason = ""
         conv.assigned_to = request.user
         conv.status = "open"
+    elif action == "wait-customer":
+        conv.status = "pending"
+        conv.needs_handoff = False
+        conv.handoff_reason = ""
+        conv.ai_enabled = bool(conv.agent_id)
     elif action == "pending":
         conv.status = "pending"
         conv.ai_enabled = False
@@ -659,6 +756,8 @@ def conversation_action(request, pk, action):
         raise Http404
     conv.save()
     if action == "enable-ai":
+        set_state(conv, "ai_active")
+    elif action == "wait-customer":
         set_state(conv, "ai_active")
     elif action in {"takeover", "pending"}:
         set_state(conv, "human_active" if action == "takeover" else "waiting_human")
@@ -1256,6 +1355,20 @@ def starsender_center(request):
         "account", "brand", "agent", "connection"
     )
     groups = WhatsAppGroup.objects.filter(tenant=request.tenant)
+    account_exists = accounts.exists()
+    account_tested = accounts.filter(last_sync_status="connection_ok").exists()
+    devices_exist = devices.exists()
+    mapped_devices = devices.filter(
+        brand__isnull=False, agent__isnull=False, encrypted_device_key__gt=""
+    )
+    ready_devices = mapped_devices.filter(send_enabled=True)
+    setup_steps = [
+        {"number": 1, "label": "Hubungkan akun", "description": "Simpan Account API Key", "done": account_exists, "current": not account_exists},
+        {"number": 2, "label": "Uji & sinkronkan", "description": "Ambil seluruh device", "done": account_tested and devices_exist, "current": account_exists and not (account_tested and devices_exist)},
+        {"number": 3, "label": "Petakan device", "description": "Pilih Brand, Agent, dan Device Key", "done": devices_exist and mapped_devices.count() == devices.count(), "current": devices_exist and mapped_devices.count() != devices.count()},
+        {"number": 4, "label": "Uji pengiriman", "description": "Pastikan device siap mengirim", "done": ready_devices.exists(), "current": mapped_devices.exists() and not ready_devices.exists()},
+        {"number": 5, "label": "Sinkronkan grup", "description": "Siapkan kategori dan preset", "done": groups.exists(), "current": ready_devices.exists() and not groups.exists()},
+    ]
     return render(
         request,
         "crm/starsender_center.html",
@@ -1265,6 +1378,8 @@ def starsender_center(request):
             "group_count": groups.count(),
             "connected_count": devices.filter(connection_status="connected").count(),
             "unmapped_count": devices.filter(Q(brand__isnull=True) | Q(agent__isnull=True)).count(),
+            "ready_count": ready_devices.count(),
+            "setup_steps": setup_steps,
             "app_base_url": settings.APP_BASE_URL,
         },
     )
@@ -1282,8 +1397,8 @@ def starsender_account_create(request):
         return redirect("starsender_center")
     return render(
         request,
-        "crm/form.html",
-        {"form": form, "title": "Tambah akun StarSender", "subtitle": "Account API Key membaca seluruh device. Key tidak ditampilkan kembali."},
+        "crm/starsender_account_form.html",
+        {"form": form, "title": "Hubungkan akun StarSender", "subtitle": "Account API Key dipakai hanya untuk membaca dan menyinkronkan device."},
     )
 
 
@@ -1298,8 +1413,8 @@ def starsender_account_edit(request, pk):
         return redirect("starsender_center")
     return render(
         request,
-        "crm/form.html",
-        {"form": form, "title": f"Edit akun — {account.name}", "subtitle": f"Webhook multi-device: {settings.APP_BASE_URL}/webhooks/starsender/account/{account.webhook_token}/"},
+        "crm/starsender_account_form.html",
+        {"form": form, "title": f"Pengaturan akun — {account.name}", "subtitle": "Perbarui Account API Key tanpa menampilkannya kembali.", "account": account, "webhook_url": f"{settings.APP_BASE_URL}/webhooks/starsender/account/{account.webhook_token}/"},
     )
 
 
@@ -1350,11 +1465,12 @@ def starsender_device_edit(request, pk):
         return redirect("starsender_center")
     return render(
         request,
-        "crm/form.html",
+        "crm/starsender_device_form.html",
         {
             "form": form,
-            "title": f"Konfigurasi device — {device}",
-            "subtitle": "Balasan inbox selalu dikirim melalui device asal. Jangan aktifkan pengiriman sebelum Brand, Agent, dan Device Key benar.",
+            "device": device,
+            "title": f"Siapkan device — {device}",
+            "subtitle": "Pilih Brand dan AI Agent yang benar, lalu masukkan Device Key untuk pengiriman.",
         },
     )
 

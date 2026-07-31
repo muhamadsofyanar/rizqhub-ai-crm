@@ -1,0 +1,20 @@
+{% extends 'crm/base.html' %}
+{% block title %}{{ title }} — RizqHub AI CRM{% endblock %}
+{% block topbar %}WhatsApp & Channel{% endblock %}
+{% block topbar_subtitle %}Langkah 1 — Hubungkan akun StarSender{% endblock %}
+{% block help_title %}Account API Key{% endblock %}
+{% block help_content %}<p>Account API Key berada pada pengaturan akun/profile StarSender. Key ini dipakai untuk membaca daftar device, bukan untuk mengirim pesan.</p><p>Jangan menaruh API Key di GitHub atau mengirimkannya melalui chat.</p>{% endblock %}
+{% block content %}
+<div class="setup-form-shell">
+  <div class="setup-form-head"><span class="setup-form-icon">1</span><div><h2 class="mt-0">{{ title }}</h2><p class="muted">{{ subtitle }}</p></div></div>
+  <div class="credential-note">Credential disimpan terenkripsi. Saat edit, biarkan kolom API Key kosong untuk mempertahankan key yang sudah tersimpan.</div>
+  <form class="card card-pad mt-2" method="post">{% csrf_token %}{{ form.non_field_errors }}
+    <div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}<span class="helptext">Contoh: Akun Utama StarSender</span></div>
+    <div class="form-row"><label>{{ form.account_api_key.label }}</label>{{ form.account_api_key }}{{ form.account_api_key.errors }}{% if form.account_api_key.help_text %}<span class="helptext">{{ form.account_api_key.help_text }}</span>{% endif %}</div>
+    <div class="form-row">{{ form.is_active }} <label style="display:inline" for="{{ form.is_active.id_for_label }}">Akun aktif</label>{{ form.is_active.errors }}</div>
+    <div class="form-row">{{ form.auto_sync_devices }} <label style="display:inline" for="{{ form.auto_sync_devices.id_for_label }}">Sinkronkan device otomatis</label>{{ form.auto_sync_devices.errors }}</div>
+    {% if webhook_url %}<div class="advanced-only"><label>Webhook Premium</label><div class="webhook-box">{{ webhook_url }}</div></div>{% endif %}
+    <div class="actions"><a class="btn" href="{% url 'starsender_center' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Akun</button></div>
+  </form>
+</div>
+{% endblock %}

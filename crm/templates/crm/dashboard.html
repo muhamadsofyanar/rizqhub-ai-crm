@@ -1,16 +1,80 @@
 {% extends 'crm/base.html' %}
-{% block title %}Dashboard — RizqHub AI CRM{% endblock %}
-{% block topbar %}Dashboard{% endblock %}
+{% block title %}Beranda — RizqHub AI CRM{% endblock %}
+{% block topbar %}Beranda{% endblock %}
+{% block topbar_subtitle %}Ringkasan operasional hari ini{% endblock %}
+{% block help_title %}Beranda{% endblock %}
+{% block help_content %}
+<p>Beranda menunjukkan hal yang perlu Anda kerjakan hari ini dan kemajuan pengaturan sistem.</p>
+<h3>Mulai dari sini</h3>
+<ol>
+  <li>Selesaikan checklist pengaturan.</li>
+  <li>Buka Inbox untuk menangani pesan.</li>
+  <li>Lengkapi Pengetahuan agar jawaban AI akurat.</li>
+  <li>Gunakan Broadcast hanya setelah penerima dan izin diperiksa.</li>
+</ol>
+<p class="safety-box">Menu teknis disembunyikan pada Mode Sederhana. Aktifkan Mode Lanjutan hanya saat perlu melihat log, automation, atau konfigurasi sistem.</p>
+{% endblock %}
 {% block content %}
-<div class="page-head"><div><h2>Ringkasan bisnis</h2><p>Pantau lead, percakapan, handoff AI, pipeline, dan kesehatan pengiriman.</p></div><a class="btn btn-primary" href="{% url 'contact_create' %}">+ Tambah lead</a></div>
-<div class="grid grid-4">
-  <div class="card stat"><div class="stat-label">Total kontak</div><div class="stat-value">{{ contact_count }}</div><div class="stat-foot">{{ new_contacts }} baru hari ini</div></div>
-  <div class="card stat"><div class="stat-label">Percakapan terbuka</div><div class="stat-value">{{ open_conversations }}</div><div class="stat-foot">{{ handoff_count }} perlu handoff</div></div>
-  <div class="card stat"><div class="stat-label">Nilai pipeline aktif</div><div class="stat-value">Rp{{ pipeline_value|floatformat:0 }}</div><div class="stat-foot">{{ open_deals }} deal terbuka</div></div>
-  <div class="card stat"><div class="stat-label">Pesan gagal</div><div class="stat-value {% if failed_messages %}metric-bad{% else %}metric-good{% endif %}">{{ failed_messages }}</div><div class="stat-foot">{{ active_automations }} automation aktif</div></div>
+<section class="card welcome-panel">
+  <div>
+    <div class="eyebrow" style="color:#93c5fd">RizqHub AI CRM</div>
+    <h2>Selamat datang, {{ request.user.first_name|default:request.user.username }}</h2>
+    <p>Kelola percakapan, AI Agent, lead, dan broadcast dari satu tempat. Fokus utama hari ini: tangani pesan yang perlu admin dan lengkapi pengetahuan bisnis.</p>
+    <div class="actions mt-2">
+      <a class="btn btn-primary" href="{% url 'inbox' %}">Buka Inbox</a>
+      <a class="btn" href="{% url 'knowledge_list' %}">Lengkapi Pengetahuan</a>
+    </div>
+  </div>
+  <div class="setup-card">
+    <div class="between flex items-center"><strong>Setup bisnis</strong><strong>{{ setup_percent }}%</strong></div>
+    <div class="progress-track"><div class="progress-fill" style="width:{{ setup_percent }}%"></div></div>
+    <small>{{ setup_done }} dari {{ setup_total }} langkah selesai</small>
+    <div class="setup-list">
+      {% for item in setup_checks %}
+        <a class="setup-item {% if item.done %}done{% endif %}" href="{{ item.url }}">
+          <span class="setup-icon">{% if item.done %}✓{% else %}{{ forloop.counter }}{% endif %}</span>
+          <span>{{ item.label }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="quick-actions mt-2">
+  <a class="quick-action" href="{% url 'inbox' %}"><span class="quick-action-icon">✉</span><span><strong>Tangani pesan</strong><small>{{ handoff_count }} percakapan perlu admin, {{ unread_total }} pesan belum dibaca.</small></span></a>
+  <a class="quick-action" href="{% url 'contact_list' %}"><span class="quick-action-icon">◎</span><span><strong>Kontak & Leads</strong><small>{{ new_contacts }} kontak baru hari ini dari total {{ contact_count }}.</small></span></a>
+  <a class="quick-action" href="{% url 'starsender_center' %}"><span class="quick-action-icon">⌁</span><span><strong>WhatsApp & Channel</strong><small>{{ connected_devices }} device terhubung dan siap diperiksa.</small></span></a>
+  <a class="quick-action" href="{% url 'broadcast_list' %}"><span class="quick-action-icon">◉</span><span><strong>Buat Broadcast</strong><small>Kirim personal atau grup dengan alur konfirmasi yang aman.</small></span></a>
 </div>
+
+<div class="grid grid-4 mt-2">
+  <div class="card stat"><div class="stat-label">Pesan perlu admin</div><div class="stat-value {% if handoff_count %}metric-bad{% endif %}">{{ handoff_count }}</div><div class="stat-foot">Prioritas untuk ditangani</div></div>
+  <div class="card stat"><div class="stat-label">Percakapan aktif</div><div class="stat-value">{{ open_conversations }}</div><div class="stat-foot">AI dan admin</div></div>
+  <div class="card stat"><div class="stat-label">Lead aktif</div><div class="stat-value">{{ open_deals }}</div><div class="stat-foot">Nilai Rp{{ pipeline_value|floatformat:0 }}</div></div>
+  <div class="card stat"><div class="stat-label">Pengetahuan aktif</div><div class="stat-value">{{ knowledge_count }}</div><div class="stat-foot">Dipakai oleh AI Agent</div></div>
+</div>
+
 <div class="grid grid-2 mt-2">
-  <section class="card"><div class="card-head"><h3>Percakapan terbaru</h3><a class="btn btn-sm" href="{% url 'inbox' %}">Lihat inbox</a></div><div class="table-wrap"><table class="table"><thead><tr><th>Kontak</th><th>Brand</th><th>Status</th></tr></thead><tbody>{% for c in recent_conversations %}<tr><td><a href="{% url 'conversation_detail' c.id %}"><strong>{{ c.contact }}</strong><br><small class="muted">{{ c.last_message_at|date:'d M H:i' }}</small></a></td><td>{{ c.brand.name }}</td><td>{% if c.needs_handoff %}<span class="badge badge-red">Handoff</span>{% elif c.ai_enabled %}<span class="badge badge-green">AI aktif</span>{% else %}<span class="badge badge-gray">Human</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Belum ada percakapan.</td></tr>{% endfor %}</tbody></table></div></section>
-  <section class="card"><div class="card-head"><h3>AI Agents</h3><a class="btn btn-sm" href="{% url 'agent_list' %}">Kelola agent</a></div><div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Mode</th><th>Status</th></tr></thead><tbody>{% for a in agents %}<tr><td><strong>{{ a.name }}</strong><br><small class="muted">{{ a.brand.name }}</small></td><td>{{ a.get_mode_display }}</td><td>{% if a.is_active %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge badge-gray">Nonaktif</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Belum ada agent.</td></tr>{% endfor %}</tbody></table></div></section>
+  <section class="card">
+    <div class="card-head"><div><h3>Percakapan terbaru</h3><small class="muted">Satu status yang mudah dipahami</small></div><a class="btn btn-sm" href="{% url 'inbox' %}">Lihat semua</a></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Pelanggan</th><th>Bisnis</th><th>Status</th></tr></thead><tbody>
+      {% for c in recent_conversations %}
+      <tr><td><a href="{% url 'conversation_detail' c.id %}"><strong>{{ c.contact }}</strong><br><small class="muted">{{ c.last_message_at|date:'d M H:i' }}</small></a></td><td>{{ c.brand.name }}</td><td>{% if c.status == 'closed' %}<span class="conversation-status status-done">Selesai</span>{% elif c.needs_handoff %}<span class="conversation-status status-help">Perlu Admin</span>{% elif c.assigned_to and not c.ai_enabled %}<span class="conversation-status status-admin">Admin Menangani</span>{% elif c.status == 'pending' %}<span class="conversation-status status-wait">Menunggu Pelanggan</span>{% elif c.ai_enabled %}<span class="conversation-status status-ai">AI Menangani</span>{% else %}<span class="conversation-status status-admin">Belum Ditangani</span>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="3" class="empty">Belum ada percakapan.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><div><h3>AI Agent</h3><small class="muted">Status agent per bisnis</small></div><a class="btn btn-sm" href="{% url 'agent_list' %}">Kelola</a></div>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Agent</th><th>Mode</th><th>Status</th></tr></thead><tbody>
+      {% for a in agents %}<tr><td><strong>{{ a.name }}</strong><br><small class="muted">{{ a.brand.name }}</small></td><td>{{ a.get_mode_display }}</td><td>{% if a.is_active %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge badge-gray">Nonaktif</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Belum ada agent.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+
+<div class="advanced-only mt-2">
+  <section class="card card-pad">
+    <div class="between flex items-center"><div><h3 class="section-title">Diagnostik operasional</h3><p class="section-subtitle">Hanya tampil pada Mode Lanjutan.</p></div><a class="btn btn-sm" href="{% url 'system_health' %}">Buka Status Sistem</a></div>
+    <div class="grid grid-3 mt-2"><div class="surface-soft"><strong>{{ failed_messages }}</strong><div class="mini-note">Pesan gagal/tidak pasti</div></div><div class="surface-soft"><strong>{{ active_automations }}</strong><div class="mini-note">Automation aktif</div></div><div class="surface-soft"><strong>{{ connected_devices }}</strong><div class="mini-note">Device connected</div></div></div>
+  </section>
 </div>
 {% endblock %}

@@ -1,320 +1,199 @@
 {% extends 'crm/base.html' %}
-{% block topbar %}Unified Inbox{% endblock %}
+{% block title %}{{ conversation.contact }} — Inbox{% endblock %}
+{% block topbar %}Inbox{% endblock %}
+{% block topbar_subtitle %}Percakapan dan detail pelanggan{% endblock %}
+{% block help_title %}Percakapan pelanggan{% endblock %}
+{% block help_content %}
+<p>Gunakan pemilih status di bagian atas chat:</p>
+<ul>
+  <li><strong>AI Menangani:</strong> AI dapat membalas pesan berikutnya.</li>
+  <li><strong>Admin Menangani:</strong> Anda mengambil alih; AI berhenti.</li>
+  <li><strong>Menunggu Pelanggan:</strong> percakapan tetap terbuka dan AI melanjutkan ketika pelanggan membalas.</li>
+  <li><strong>Selesai:</strong> menutup percakapan.</li>
+</ul>
+<p class="safety-box">Balasan manual selalu mematikan AI pada percakapan tersebut untuk mencegah balasan ganda.</p>
+{% endblock %}
 {% block content %}
-<div class="card two-panel">
-  <div id="conversationList" class="conversation-list" data-api-url="{% url 'inbox_conversations_api' %}" data-selected-id="{{ selected.id }}">
-    {% for c in conversations %}
+<div class="inbox-shell has-selected">
+  <aside class="inbox-list-pane">
+    <div class="inbox-list-head">
+      <div class="between flex items-center"><h2>Pesan</h2><a class="btn btn-sm" href="{% url 'inbox' %}">Semua</a></div>
+      <form class="inbox-search" method="get" action="{% url 'inbox' %}"><input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Cari percakapan"></form>
+    </div>
+    <div class="inbox-filters">
+      <a class="filter-pill" href="{% url 'inbox' %}">Semua</a><a class="filter-pill" href="{% url 'inbox' %}?filter=unread">Belum dibaca</a><a class="filter-pill" href="{% url 'inbox' %}?filter=admin">Perlu Admin</a><a class="filter-pill" href="{% url 'inbox' %}?filter=ai">AI Aktif</a>
+    </div>
+    <div id="conversationList" class="conversation-list" data-api-url="{% url 'inbox_conversations_api' %}" data-selected-id="{{ selected.id }}">
+      {% for c in conversations %}
       <a class="conversation-item {% if c.id == selected.id %}active{% endif %}" href="{% url 'conversation_detail' c.id %}" data-conversation-id="{{ c.id }}">
-        <div class="conversation-name"><span>{{ c.contact|truncatechars:24 }}</span><small class="muted">{{ c.last_message_at|date:'H:i' }}</small></div>
-        <div class="conversation-preview">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }}</div>
-        <div class="mt-2">
-          {% if c.needs_handoff %}<span class="badge badge-red">Handoff</span>{% elif c.ai_enabled %}<span class="badge badge-green">AI aktif</span>{% else %}<span class="badge badge-gray">Human</span>{% endif %}
-          {% if c.unread_count %}<span class="badge">{{ c.unread_count }} baru</span>{% endif %}
+        <div class="conversation-name"><span>{{ c.contact|truncatechars:27 }}</span><small class="muted">{{ c.last_message_at|date:'H:i' }}</small></div>
+        <div class="conversation-preview">{{ c.latest_message_body|default:c.brand.name|truncatechars:75 }}</div>
+        <div class="conversation-item-status">
+          {% if c.status == 'closed' %}<span class="conversation-status status-done">Selesai</span>{% elif c.needs_handoff %}<span class="conversation-status status-help">Perlu Admin</span>{% elif c.assigned_to and not c.ai_enabled %}<span class="conversation-status status-admin">Admin Menangani</span>{% elif c.status == 'pending' %}<span class="conversation-status status-wait">Menunggu Pelanggan</span>{% elif c.ai_enabled %}<span class="conversation-status status-ai">AI Menangani</span>{% else %}<span class="conversation-status status-admin">Belum Ditangani</span>{% endif %}
+          {% if c.unread_count and c.id != selected.id %}<span class="unread-dot">{{ c.unread_count }}</span>{% endif %}
         </div>
       </a>
-    {% endfor %}
-  </div>
-  <section class="chat">
+      {% empty %}<div class="empty">Belum ada percakapan.</div>{% endfor %}
+    </div>
+  </aside>
+
+  <section class="chat-pane">
     <div class="chat-head">
-      <div>
-        <strong>{{ conversation.contact }}</strong><br>
-        <small class="muted">{{ conversation.contact.phone }} · {{ conversation.brand.name }} · {{ conversation.agent.name|default:'Tanpa agent' }}</small>
-        <div class="mt-2 flex gap items-center">
-          {% if feature_live_inbox %}<span id="liveIndicator" class="badge badge-green"><span class="live-dot"></span> Live</span>{% endif %}
-          <span id="conversationState" class="badge {% if conversation.needs_handoff %}badge-red{% elif conversation.ai_enabled %}badge-green{% else %}badge-gray{% endif %}">
-            {% if conversation.needs_handoff %}Handoff{% elif conversation.ai_enabled %}AI aktif{% else %}Human{% endif %}
-          </span>
-          {% if conversation.handoff_reason %}<span id="handoffReason" class="badge badge-red">{{ conversation.handoff_reason }}</span>{% else %}<span id="handoffReason"></span>{% endif %}
-        </div>
+      <div class="chat-contact">
+        <a class="icon-btn" href="{% url 'inbox' %}" aria-label="Kembali">‹</a>
+        <span class="contact-avatar">{{ conversation.contact.name|default:conversation.contact.phone|first|upper }}</span>
+        <div style="min-width:0"><strong>{{ conversation.contact }}</strong><small class="muted">{{ conversation.contact.phone }} · {{ conversation.brand.name }}{% if conversation.channel == 'whatsapp_group' or conversation.channel == 'group' %} · Grup{% endif %}</small><div id="simpleHandoffReason" class="simple-status-reason">{% if conversation.needs_handoff %}AI membutuhkan bantuan admin.{% endif %}</div></div>
       </div>
-      <div class="flex gap wrap">
-        <form method="post" action="{% url 'conversation_action' conversation.id 'takeover' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Ambil alih</button></form>
-        {% if conversation.agent %}<form method="post" action="{% url 'conversation_action' conversation.id 'enable-ai' %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Aktifkan AI</button></form>{% endif %}
-        <form method="post" action="{% url 'conversation_action' conversation.id 'pending' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Pending</button></form>
-        {% if conversation.status == 'closed' %}<form method="post" action="{% url 'conversation_action' conversation.id 'reopen' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Buka lagi</button></form>{% else %}<form method="post" action="{% url 'conversation_action' conversation.id 'close' %}">{% csrf_token %}<button class="btn btn-sm" type="submit">Tutup</button></form>{% endif %}
+      <div class="flex gap items-center">
+        {% if feature_live_inbox %}<span id="liveIndicator" class="chat-live"><span class="live-dot"></span> Live</span>{% endif %}
+        <form id="conversationStateForm" method="post" action="{% url 'conversation_action' conversation.id 'enable-ai' %}" data-action-template="{% url 'conversation_action' conversation.id 'ACTION' %}">{% csrf_token %}
+          <select id="conversationStateSelect" class="chat-status-select" aria-label="Status percakapan">
+            {% if conversation_ui_state.key == 'help' %}<option value="" selected disabled>Perlu Admin — pilih tindakan</option>{% endif %}
+            <option value="enable-ai" {% if conversation_ui_state.key == 'ai' %}selected{% endif %}>AI Menangani</option>
+            <option value="takeover" {% if conversation_ui_state.key == 'admin' %}selected{% endif %}>Admin Menangani</option>
+            <option value="wait-customer" {% if conversation_ui_state.key == 'wait' %}selected{% endif %}>Menunggu Pelanggan</option>
+            {% if conversation.status == 'closed' %}<option value="reopen" selected>Buka Kembali</option>{% else %}<option value="close">Selesai</option>{% endif %}
+          </select>
+        </form>
       </div>
     </div>
 
     <div id="chatBody" class="chat-body" data-api-url="{% url 'conversation_messages_api' conversation.id %}" data-poll-ms="{{ live_poll_ms }}">
       {% for m in conversation_messages %}
-        <div class="bubble-row {{ m.direction }}" data-message-id="{{ m.id }}">
-          <div class="bubble">
-            <div class="bubble-text">{{ m.body }}</div>
-            {% if m.attachment_url %}<div><a target="_blank" rel="noopener" href="{{ m.attachment_url }}">Buka lampiran</a></div>{% endif %}
-            <div class="bubble-meta">{{ m.sender_type }} · {{ m.created_at|date:'d M H:i' }} · {{ m.status }}{% if m.ai_metadata.confidence %} · confidence {{ m.ai_metadata.confidence }}%{% endif %}</div>
-            {% if m.status == 'uncertain' %}<div class="alert alert-error mt-2">Status provider tidak pasti. Periksa WhatsApp/StarSender sebelum mengirim ulang agar tidak terjadi pesan ganda.</div>{% endif %}
-            <div class="message-actions">
-              {% if m.direction == 'outbound' and m.status == 'failed' %}<form method="post" action="{% url 'message_retry' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Kirim ulang</button></form>{% endif %}
-              {% if m.direction == 'internal' and m.sender_type == 'ai' and not m.ai_metadata.approved_message_id %}<form method="post" action="{% url 'message_approve' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Setujui & kirim</button></form>{% endif %}
-              {% if 'ai' in m.sender_type %}
-                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="helpful"><button class="btn btn-sm" type="submit">✓ Tepat</button></form>
-                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="needs_edit"><button class="btn btn-sm" type="submit">✎ Koreksi</button></form>
-                <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="unsafe"><button class="btn btn-sm btn-danger" type="submit">! Tidak aman</button></form>
-              {% endif %}
-            </div>
-          </div>
+      <div class="bubble-row {{ m.direction }}" data-message-id="{{ m.id }}"><div class="bubble">
+        <div class="bubble-text">{{ m.body }}</div>
+        {% if m.attachment_url %}<div><a target="_blank" rel="noopener" href="{{ m.attachment_url }}">Buka lampiran</a></div>{% endif %}
+        <div class="bubble-meta">{% if m.sender_type == 'contact' %}Pelanggan{% elif 'ai' in m.sender_type %}AI{% else %}Admin{% endif %} · {{ m.created_at|date:'d M H:i' }} · {{ m.get_status_display }}</div>
+        {% if m.status == 'uncertain' %}<div class="alert alert-error mt-2">Status pengiriman belum pasti. Periksa WhatsApp sebelum mencoba lagi agar pesan tidak terkirim dua kali.</div>{% endif %}
+        <div class="message-actions">
+          {% if m.direction == 'outbound' and m.status == 'failed' %}<form method="post" action="{% url 'message_retry' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Kirim ulang</button></form>{% endif %}
+          {% if m.direction == 'internal' and m.sender_type == 'ai' and not m.ai_metadata.approved_message_id %}<form method="post" action="{% url 'message_approve' m.id %}">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Setujui & kirim</button></form>{% endif %}
+          {% if 'ai' in m.sender_type %}
+          <span class="advanced-only">
+            <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="helpful"><button class="btn btn-sm" type="submit">✓ Tepat</button></form>
+            <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="needs_edit"><button class="btn btn-sm" type="submit">✎ Koreksi</button></form>
+            <form class="quick-review" method="post" action="{% url 'message_review' m.id %}">{% csrf_token %}<input type="hidden" name="verdict" value="unsafe"><button class="btn btn-sm btn-danger" type="submit">! Tidak aman</button></form>
+          </span>
+          {% endif %}
         </div>
+      </div></div>
       {% empty %}<div class="empty">Belum ada pesan.</div>{% endfor %}
-    </div>
-
-    <div class="chat-tools">
-      <details>
-        <summary>Ringkasan AI & data pelanggan</summary>
-        <div class="grid grid-2 mt-2">
-          <div><strong>Status operasi</strong><p class="muted">{{ conversation_control.get_state_display }} · confidence terakhir {{ conversation_control.last_confidence }}%</p>{% if conversation_control.last_ai_error %}<div class="alert alert-error">{{ conversation_control.last_ai_error }}</div>{% endif %}</div>
-          <div><strong>Customer Memory</strong>{% if contact_memory and contact_memory.summary %}<div class="config-example mt-2">{{ contact_memory.summary }}</div>{% else %}<p class="muted">Belum ada data terstruktur yang tersimpan.</p>{% endif %}</div>
-        </div>
-      </details>
-      <details>
-        <summary>Penugasan & catatan internal</summary>
-        <div class="grid grid-2 mt-2">
-          <form method="post" action="{% url 'conversation_assign' conversation.id %}">{% csrf_token %}
-            <div class="form-row"><label>Ditangani oleh</label>{{ assignment_form.assigned_to }}</div>
-            <button class="btn btn-sm" type="submit">Simpan penugasan</button>
-          </form>
-          <form method="post" action="{% url 'conversation_note' conversation.id %}">{% csrf_token %}
-            <div class="form-row"><label>Catatan internal</label>{{ note_form.note }}</div>
-            <button class="btn btn-sm" type="submit">Tambah catatan</button>
-          </form>
-        </div>
-      </details>
     </div>
 
     <div class="chat-compose">
       <form method="post">{% csrf_token %}{{ reply_form.body }}<button class="btn btn-primary" type="submit">Kirim</button></form>
-      <small class="muted">Mengirim manual otomatis menonaktifkan AI pada percakapan ini agar tidak terjadi balasan ganda.</small>
+      <div class="compose-hint"><span>Balasan manual mengalihkan chat ke Admin Menangani.</span><span class="advanced-only">Device asal: {{ conversation.connection.name|default:'Belum terhubung' }}</span></div>
     </div>
   </section>
+
+  <aside class="detail-pane">
+    <section class="detail-section">
+      <h3>Detail Pelanggan</h3>
+      <div class="detail-row"><span>Nama</span><strong>{{ conversation.contact.name|default:'Belum diisi' }}</strong></div>
+      <div class="detail-row"><span>Nomor</span><strong>{{ conversation.contact.phone|default:'—' }}</strong></div>
+      <div class="detail-row"><span>Bisnis</span><strong>{{ conversation.brand.name }}</strong></div>
+      <div class="detail-row"><span>Sumber</span><strong>{{ conversation.contact.source|default:'WhatsApp' }}</strong></div>
+      <div class="detail-row"><span>Pipeline</span><strong>{% if active_deal %}{{ active_deal.stage.name }}{% else %}Belum ada{% endif %}</strong></div>
+      <div class="detail-row"><span>Ditangani</span><strong id="assignedToLabel">{% if conversation.assigned_to %}{{ conversation.assigned_to.get_full_name|default:conversation.assigned_to.username }}{% elif conversation.ai_enabled %}{{ conversation.agent.name|default:'AI' }}{% else %}Belum ditentukan{% endif %}</strong></div>
+    </section>
+
+    <section class="detail-section">
+      <h3>Ringkasan Kebutuhan</h3>
+      {% if contact_memory and contact_memory.summary %}<p style="font-size:12px;line-height:1.55;margin:0">{{ contact_memory.summary }}</p>{% else %}<p class="muted" style="font-size:12px">AI belum memiliki ringkasan yang cukup.</p>{% endif %}
+      {% if contact_memory and contact_memory.facts %}<div class="memory-facts mt-2">{% for key,value in contact_memory.facts.items %}<div class="memory-fact"><span class="muted">{{ key|capfirst }}</span><br><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
+    </section>
+
+    {% if contact_memory and contact_memory.missing_fields %}<section class="detail-section"><h3>Data Berikutnya</h3><div class="missing-list">{% for field in contact_memory.missing_fields %}<span class="badge badge-yellow">{{ field }}</span>{% endfor %}</div></section>{% endif %}
+
+    <section class="detail-section">
+      <h3>Penugasan</h3>
+      <form class="right-panel-form" method="post" action="{% url 'conversation_assign' conversation.id %}">{% csrf_token %}<div class="form-row">{{ assignment_form.assigned_to }}</div><button class="btn btn-sm" type="submit">Simpan penugasan</button></form>
+    </section>
+
+    <section class="detail-section">
+      <h3>Catatan Internal</h3>
+      <form class="right-panel-form" method="post" action="{% url 'conversation_note' conversation.id %}">{% csrf_token %}<div class="form-row">{{ note_form.note }}</div><button class="btn btn-sm" type="submit">Tambah catatan</button></form>
+    </section>
+
+    <section class="detail-section advanced-only">
+      <h3>Diagnostik AI</h3>
+      <div class="detail-row"><span>Confidence</span><strong id="confidenceLabel">{{ conversation_control.last_confidence }}%</strong></div>
+      <div class="detail-row"><span>State</span><strong>{{ conversation_control.get_state_display }}</strong></div>
+      {% if conversation.handoff_reason %}<div class="diagnostic-box">Alasan: {{ conversation.handoff_reason }}</div>{% endif %}
+      {% if conversation_control.last_ai_error %}<div class="alert alert-error mt-2">{{ conversation_control.last_ai_error }}</div>{% endif %}
+    </section>
+  </aside>
 </div>
 {% endblock %}
 {% block scripts %}
+<script>
+(() => {
+  const stateForm=document.getElementById('conversationStateForm');
+  const stateSelect=document.getElementById('conversationStateSelect');
+  stateSelect?.addEventListener('change',()=>{
+    const template=stateForm.dataset.actionTemplate;
+    stateForm.action=template.replace('ACTION',stateSelect.value);
+    stateSelect.disabled=true;
+    stateForm.submit();
+  });
+})();
+</script>
 {% if feature_live_inbox %}
 <script>
 (() => {
-  const chat = document.getElementById('chatBody');
-  const conversationList = document.getElementById('conversationList');
-  const indicator = document.getElementById('liveIndicator');
-  const stateBadge = document.getElementById('conversationState');
-  const handoffReason = document.getElementById('handoffReason');
-  const apiUrl = chat.dataset.apiUrl;
-  const conversationApiUrl = conversationList.dataset.apiUrl;
-  const selectedConversationId = conversationList.dataset.selectedId;
-  const basePoll = Math.max(Number(chat.dataset.pollMs || 2500), 1500);
-  let lastSignature = '';
-  let lastConversationSignature = '';
-  let timer = null;
-  let loading = false;
-  let lastCount = chat.querySelectorAll('[data-message-id]').length;
+  const chat=document.getElementById('chatBody');
+  const list=document.getElementById('conversationList');
+  const indicator=document.getElementById('liveIndicator');
+  if(!chat||!list||!indicator)return;
+  const apiUrl=chat.dataset.apiUrl;
+  const listUrl=list.dataset.apiUrl;
+  const selectedId=list.dataset.selectedId;
+  const basePoll=Math.max(Number(chat.dataset.pollMs||2500),1500);
+  let timer,loading=false,lastMessages='',lastList='',lastCount=chat.querySelectorAll('[data-message-id]').length;
 
-  function csrfToken() {
-    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : '';
+  function csrf(){const m=document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
+  async function post(url,data={}){const response=await fetch(url,{method:'POST',headers:{'X-CSRFToken':csrf(),'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(data),credentials:'same-origin'});if(!response.ok)throw new Error('HTTP '+response.status);await refresh(true);}
+  function button(label,classes,handler){const b=document.createElement('button');b.type='button';b.className=classes;b.textContent=label;b.addEventListener('click',handler);return b;}
+  function status(item){const n=document.createElement('span');n.className=`conversation-status ${item.ui_status_class||''}`;n.textContent=item.ui_status||'Belum Ditangani';return n;}
+  function renderConversation(item){
+    const a=document.createElement('a');a.className=`conversation-item${item.id===selectedId?' active':''}`;a.href=item.url;
+    const h=document.createElement('div');h.className='conversation-name';const n=document.createElement('span');n.textContent=item.contact_name||'Tanpa nama';const t=document.createElement('small');t.className='muted';t.textContent=item.last_message_label||'';h.append(n,t);
+    const p=document.createElement('div');p.className='conversation-preview';p.textContent=item.last_message_preview||item.brand_name||'';
+    const f=document.createElement('div');f.className='conversation-item-status';f.appendChild(status(item));if(item.unread_count&&item.id!==selectedId){const u=document.createElement('span');u.className='unread-dot';u.textContent=item.unread_count;f.appendChild(u);}a.append(h,p,f);return a;
   }
-
-  async function postAction(url, data = {}) {
-    const body = new URLSearchParams(data);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {'X-CSRFToken': csrfToken(), 'Content-Type': 'application/x-www-form-urlencoded'},
-      body,
-      credentials: 'same-origin'
-    });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    await refresh(true);
+  function renderMessage(m){
+    const row=document.createElement('div');row.className=`bubble-row ${m.direction}`;row.dataset.messageId=m.id;
+    const bubble=document.createElement('div');bubble.className='bubble';const text=document.createElement('div');text.className='bubble-text';text.textContent=m.body||'';bubble.appendChild(text);
+    if(m.attachment_url){const link=document.createElement('a');link.href=m.attachment_url;link.target='_blank';link.rel='noopener';link.textContent='Buka lampiran';bubble.appendChild(link);}
+    const meta=document.createElement('div');meta.className='bubble-meta';const sender=m.sender_type==='contact'?'Pelanggan':String(m.sender_type||'').includes('ai')?'AI':'Admin';meta.textContent=`${sender} · ${m.created_label} · ${m.status}`;bubble.appendChild(meta);
+    if(m.status==='uncertain'){const warn=document.createElement('div');warn.className='alert alert-error mt-2';warn.textContent='Status pengiriman belum pasti. Periksa WhatsApp sebelum mencoba lagi.';bubble.appendChild(warn);}
+    const actions=document.createElement('div');actions.className='message-actions';
+    if(m.can_retry)actions.appendChild(button('Kirim ulang','btn btn-sm btn-danger',()=>post(m.retry_url)));
+    if(m.can_approve)actions.appendChild(button('Setujui & kirim','btn btn-sm btn-success',()=>post(m.approve_url)));
+    if(String(m.sender_type||'').includes('ai')&&document.body.classList.contains('ui-advanced')){actions.appendChild(button('✓ Tepat','btn btn-sm',()=>post(m.review_url,{verdict:'helpful'})));actions.appendChild(button('✎ Koreksi','btn btn-sm',()=>post(m.review_url,{verdict:'needs_edit'})));actions.appendChild(button('! Tidak aman','btn btn-sm btn-danger',()=>post(m.review_url,{verdict:'unsafe'})));}
+    if(actions.childElementCount)bubble.appendChild(actions);row.appendChild(bubble);return row;
   }
-
-  function makeButton(label, className, handler) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = className;
-    button.textContent = label;
-    button.addEventListener('click', handler);
-    return button;
+  function updateState(c){
+    const reason=document.getElementById('simpleHandoffReason');
+    reason.textContent=c.needs_handoff?'AI membutuhkan bantuan admin.':'';
+    const confidence=document.getElementById('confidenceLabel');if(confidence&&c.last_confidence!==undefined)confidence.textContent=`${c.last_confidence}%`;
   }
-
-  function makeBadge(text, className = '') {
-    const node = document.createElement('span');
-    node.className = `badge ${className}`.trim();
-    node.textContent = text;
-    return node;
+  async function refresh(force=false){
+    if(loading)return;loading=true;const nearBottom=chat.scrollHeight-chat.scrollTop-chat.clientHeight<150;
+    try{
+      const [messagesResponse,listResponse]=await Promise.all([fetch(apiUrl,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'}),fetch(listUrl,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'})]);
+      if(!messagesResponse.ok||!listResponse.ok)throw new Error('HTTP');
+      const data=await messagesResponse.json();const listData=await listResponse.json();
+      const sig=JSON.stringify(data.messages.map(m=>[m.id,m.status,m.body,m.review]));
+      if(force||sig!==lastMessages){chat.replaceChildren(...data.messages.map(renderMessage));if(nearBottom||data.messages.length>lastCount)chat.scrollTop=chat.scrollHeight;lastCount=data.messages.length;lastMessages=sig;}
+      const rows=Array.isArray(listData.conversations)?listData.conversations:[];const listSig=JSON.stringify(rows.map(r=>[r.id,r.last_message_at,r.unread_count,r.ui_status_key,r.last_message_preview]));
+      if(force||listSig!==lastList){list.replaceChildren(...rows.map(renderConversation));lastList=listSig;}
+      updateState(data.conversation);indicator.className='chat-live';indicator.innerHTML='<span class="live-dot"></span> Live';
+    }catch(error){indicator.className='conversation-status status-help';indicator.textContent='Terputus';}
+    finally{loading=false;clearTimeout(timer);timer=setTimeout(refresh,document.hidden?Math.max(basePoll*4,10000):basePoll);}
   }
-
-  function renderConversation(item) {
-    const link = document.createElement('a');
-    link.className = `conversation-item${item.id === selectedConversationId ? ' active' : ''}`;
-    link.href = item.url;
-    link.dataset.conversationId = item.id;
-
-    const head = document.createElement('div');
-    head.className = 'conversation-name';
-    const name = document.createElement('span');
-    name.textContent = item.contact_name || 'Tanpa nama';
-    const time = document.createElement('small');
-    time.className = 'muted';
-    time.textContent = item.last_message_label || '';
-    head.append(name, time);
-
-    const meta = document.createElement('div');
-    meta.className = 'conversation-preview';
-    meta.textContent = `${item.brand_name} · ${item.agent_name} · ${item.channel}`;
-
-    const statuses = document.createElement('div');
-    statuses.className = 'mt-2';
-    if (item.needs_handoff) {
-      statuses.appendChild(makeBadge('Handoff', 'badge-red'));
-    } else if (item.ai_enabled) {
-      statuses.appendChild(makeBadge('AI aktif', 'badge-green'));
-    } else {
-      statuses.appendChild(makeBadge('Human', 'badge-gray'));
-    }
-    if (item.channel === 'whatsapp_group' || item.channel === 'group') {
-      statuses.appendChild(makeBadge('Grup'));
-    }
-    if (item.unread_count && item.id !== selectedConversationId) {
-      statuses.appendChild(makeBadge(`${item.unread_count} baru`));
-    }
-    link.append(head, meta, statuses);
-    return link;
-  }
-
-  async function refreshConversationList(force = false) {
-    const response = await fetch(conversationApiUrl, {
-      headers: {'Accept': 'application/json'},
-      credentials: 'same-origin',
-      cache: 'no-store'
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const rows = Array.isArray(data.conversations) ? data.conversations : [];
-    const signature = JSON.stringify(rows.map(row => [
-      row.id, row.last_message_at, row.unread_count, row.ai_enabled, row.needs_handoff, row.status
-    ]));
-    if (force || signature !== lastConversationSignature) {
-      if (rows.length) {
-        conversationList.replaceChildren(...rows.map(renderConversation));
-      } else {
-        const empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = 'Belum ada percakapan.';
-        conversationList.replaceChildren(empty);
-      }
-      lastConversationSignature = signature;
-    }
-  }
-
-  function renderMessage(message) {
-    const row = document.createElement('div');
-    row.className = `bubble-row ${message.direction}`;
-    row.dataset.messageId = message.id;
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-    const text = document.createElement('div');
-    text.className = 'bubble-text';
-    text.textContent = message.body || '';
-    bubble.appendChild(text);
-
-    if (message.attachment_url) {
-      const wrapper = document.createElement('div');
-      const link = document.createElement('a');
-      link.href = message.attachment_url;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.textContent = 'Buka lampiran';
-      wrapper.appendChild(link);
-      bubble.appendChild(wrapper);
-    }
-
-    const meta = document.createElement('div');
-    meta.className = 'bubble-meta';
-    meta.textContent = `${message.sender_type} · ${message.created_label} · ${message.status}` + (message.confidence ? ` · confidence ${message.confidence}%` : '');
-    bubble.appendChild(meta);
-
-    if (message.status === 'uncertain') {
-      const warning = document.createElement('div');
-      warning.className = 'alert alert-error mt-2';
-      warning.textContent = 'Status provider tidak pasti. Periksa WhatsApp/StarSender sebelum mengirim ulang agar tidak terjadi pesan ganda.';
-      bubble.appendChild(warning);
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'message-actions';
-    if (message.can_retry) {
-      actions.appendChild(makeButton('Kirim ulang', 'btn btn-sm btn-danger', () => postAction(message.retry_url)));
-    }
-    if (message.can_approve) {
-      actions.appendChild(makeButton('Setujui & kirim', 'btn btn-sm btn-success', () => postAction(message.approve_url)));
-    }
-    if ((message.sender_type || '').includes('ai')) {
-      actions.appendChild(makeButton('✓ Tepat', 'btn btn-sm' + (message.review === 'helpful' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'helpful'})));
-      actions.appendChild(makeButton('✎ Koreksi', 'btn btn-sm' + (message.review === 'needs_edit' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'needs_edit'})));
-      actions.appendChild(makeButton('! Tidak aman', 'btn btn-sm btn-danger' + (message.review === 'unsafe' ? ' selected' : ''), () => postAction(message.review_url, {verdict: 'unsafe'})));
-    }
-    if (actions.childElementCount) bubble.appendChild(actions);
-    row.appendChild(bubble);
-    return row;
-  }
-
-  function updateConversationState(data) {
-    if (data.needs_handoff) {
-      stateBadge.className = 'badge badge-red';
-      stateBadge.textContent = 'Handoff';
-    } else if (data.ai_enabled) {
-      stateBadge.className = 'badge badge-green';
-      stateBadge.textContent = 'AI aktif';
-    } else {
-      stateBadge.className = 'badge badge-gray';
-      stateBadge.textContent = 'Human';
-    }
-    if (data.handoff_reason) {
-      handoffReason.className = 'badge badge-red';
-      handoffReason.textContent = data.handoff_reason;
-    } else {
-      handoffReason.className = '';
-      handoffReason.textContent = '';
-    }
-  }
-
-  async function refresh(force = false) {
-    if (loading) return;
-    loading = true;
-    const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 140;
-    try {
-      const response = await fetch(apiUrl, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      const data = await response.json();
-      const signature = JSON.stringify(data.messages.map(m => [m.id, m.status, m.body, m.review, m.can_approve]));
-      if (force || signature !== lastSignature) {
-        chat.replaceChildren(...data.messages.map(renderMessage));
-        if (nearBottom || data.messages.length > lastCount) chat.scrollTop = chat.scrollHeight;
-        if (data.messages.length > lastCount && document.hidden) {
-          document.title = `(${data.messages.length - lastCount}) Pesan baru — RizqHub AI CRM`;
-        }
-        lastCount = data.messages.length;
-        lastSignature = signature;
-      }
-      updateConversationState(data.conversation);
-      await refreshConversationList(force);
-      indicator.className = 'badge badge-green';
-      indicator.innerHTML = '<span class="live-dot"></span> Live';
-    } catch (error) {
-      indicator.className = 'badge badge-red';
-      indicator.textContent = 'Terputus';
-    } finally {
-      loading = false;
-      clearTimeout(timer);
-      timer = setTimeout(refresh, document.hidden ? Math.max(basePoll * 4, 10000) : basePoll);
-    }
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      document.title = 'Unified Inbox — RizqHub AI CRM';
-      clearTimeout(timer);
-      refresh(true);
-    }
-  });
-  chat.scrollTop = chat.scrollHeight;
-  refresh(true);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);refresh(true);}});
+  chat.scrollTop=chat.scrollHeight;refresh(true);
 })();
 </script>
 {% endif %}

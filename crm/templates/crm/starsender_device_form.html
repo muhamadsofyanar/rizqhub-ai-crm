@@ -1,0 +1,21 @@
+{% extends 'crm/base.html' %}
+{% block title %}{{ title }} — RizqHub AI CRM{% endblock %}
+{% block topbar %}WhatsApp & Channel{% endblock %}
+{% block topbar_subtitle %}Langkah 3 — Petakan device ke bisnis dan agent{% endblock %}
+{% block help_title %}Device Key dan Mapping{% endblock %}
+{% block help_content %}<p>Device Key berasal dari halaman detail device StarSender. Key ini hanya digunakan oleh device tersebut untuk mengirim pesan dan membaca grup.</p><p>Balasan Inbox selalu dikirim melalui device asal. Pastikan Brand dan AI Agent sesuai dengan nomor WhatsApp.</p>{% endblock %}
+{% block content %}
+<div class="setup-form-shell">
+  <div class="setup-form-head"><span class="setup-form-icon">3</span><div><h2 class="mt-0">{{ title }}</h2><p class="muted">{{ subtitle }}</p></div></div>
+  <div class="surface-soft"><div class="review-grid"><dt>Device ID</dt><dd>{{ device.external_device_id }}</dd><dt>Status</dt><dd>{{ device.get_connection_status_display }}</dd><dt>Nomor</dt><dd>{{ device.phone_number|default:'Belum terbaca' }}</dd></div></div>
+  <form class="card card-pad mt-2" method="post">{% csrf_token %}{{ form.non_field_errors }}
+    <div class="grid grid-2"><div class="form-row"><label>{{ form.name.label }}</label>{{ form.name }}{{ form.name.errors }}</div><div class="form-row"><label>{{ form.phone_number.label }}</label>{{ form.phone_number }}{{ form.phone_number.errors }}</div></div>
+    <div class="grid grid-2"><div class="form-row"><label>{{ form.brand.label }}</label>{{ form.brand }}{{ form.brand.errors }}<span class="helptext">Bisnis yang menerima pesan dari nomor ini.</span></div><div class="form-row"><label>{{ form.agent.label }}</label>{{ form.agent }}{{ form.agent.errors }}<span class="helptext">AI Agent harus berasal dari Brand yang sama.</span></div></div>
+    <div class="form-row"><label>{{ form.device_key.label }}</label>{{ form.device_key }}{{ form.device_key.errors }}{% if form.device_key.help_text %}<span class="helptext">{{ form.device_key.help_text }}</span>{% endif %}</div>
+    <div class="surface-soft"><div class="form-row">{{ form.send_enabled }} <label style="display:inline" for="{{ form.send_enabled.id_for_label }}">Aktifkan pengiriman pesan</label>{{ form.send_enabled.errors }}</div><div class="form-row">{{ form.group_sync_enabled }} <label style="display:inline" for="{{ form.group_sync_enabled.id_for_label }}">Aktifkan sinkronisasi grup</label>{{ form.group_sync_enabled.errors }}</div></div>
+    <div class="advanced-only mt-2"><div class="grid grid-2"><div class="form-row">{{ form.is_default }} <label style="display:inline" for="{{ form.is_default.id_for_label }}">Device utama brand</label>{{ form.is_default.errors }}</div><div class="form-row">{{ form.is_fallback }} <label style="display:inline" for="{{ form.is_fallback.id_for_label }}">Device cadangan</label>{{ form.is_fallback.errors }}</div></div></div>
+    <div class="safety-box mt-2">Jangan aktifkan pengiriman sebelum Device Key, Brand, dan AI Agent benar. Setelah disimpan, kembali ke halaman sebelumnya dan klik <strong>Uji Device Key</strong>.</div>
+    <div class="actions"><a class="btn" href="{% url 'starsender_center' %}">Batal</a><button class="btn btn-primary" type="submit">Simpan Device</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,56 +1,57 @@
 {% extends 'crm/base.html' %}
-{% block topbar %}Unified Inbox{% endblock %}
+{% block title %}Inbox — RizqHub AI CRM{% endblock %}
+{% block topbar %}Inbox{% endblock %}
+{% block topbar_subtitle %}Pesan personal dan grup dalam satu tempat{% endblock %}
+{% block help_title %}Inbox{% endblock %}
+{% block help_content %}
+<p>Inbox memakai satu status utama agar mudah dipahami:</p>
+<ul>
+  <li><strong>AI Menangani:</strong> agent dapat membalas pesan berikutnya.</li>
+  <li><strong>Perlu Admin:</strong> AI meminta bantuan manusia.</li>
+  <li><strong>Admin Menangani:</strong> staf mengambil alih percakapan.</li>
+  <li><strong>Menunggu Pelanggan:</strong> jawaban sudah diberikan dan menunggu respons.</li>
+  <li><strong>Selesai:</strong> percakapan ditutup.</li>
+</ul>
+<p>Pilih percakapan di sebelah kiri. Pesan akan diperbarui otomatis saat fitur Inbox Live aktif.</p>
+{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h2>Unified Inbox</h2>
-    <p>Pesan personal dan grup, draft AI, serta handoff ke staf.</p>
-  </div>
-  <div class="flex gap wrap items-center">
-    {% if feature_live_inbox %}
-      <span id="inboxLiveIndicator" class="badge badge-green"><span class="live-dot"></span> Live</span>
-    {% endif %}
-    <a class="btn" href="?handoff=1">Perlu handoff</a>
-    <a class="btn" href="?status=open">Open</a>
-    <a class="btn" href="{% url 'inbox' %}">Semua</a>
-  </div>
-</div>
-
-<div class="card two-panel">
-  <div
-    id="conversationList"
-    class="conversation-list"
-    data-api-url="{% url 'inbox_conversations_api' %}"
-    data-poll-ms="{{ live_poll_ms|default:2500 }}"
-  >
-    {% for c in conversations %}
-      <a class="conversation-item" href="{% url 'conversation_detail' c.id %}" data-conversation-id="{{ c.id }}">
-        <div class="conversation-name">
-          <span>{{ c.contact|truncatechars:32 }}</span>
-          <small class="muted">{{ c.last_message_at|date:'d M H:i' }}</small>
-        </div>
-        <div class="conversation-preview">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }} · {{ c.channel }}</div>
-        {% if c.latest_message_body %}<div class="conversation-preview mt-2">{{ c.latest_message_body|truncatechars:100 }}</div>{% endif %}
-        <div class="mt-2">
-          {% if c.needs_handoff %}
-            <span class="badge badge-red">Handoff</span>
-          {% elif c.ai_enabled %}
-            <span class="badge badge-green">AI aktif</span>
-          {% else %}
-            <span class="badge badge-gray">Human</span>
-          {% endif %}
-          {% if c.channel == 'whatsapp_group' or c.channel == 'group' %}<span class="badge">Grup</span>{% endif %}
-          {% if c.unread_count %}<span class="badge">{{ c.unread_count }} baru</span>{% endif %}
-        </div>
-      </a>
-    {% empty %}
-      <div class="empty" id="emptyInbox">Belum ada percakapan.<br>Hubungkan webhook StarSender untuk menerima pesan.</div>
-    {% endfor %}
-  </div>
-  <div class="empty">Pilih percakapan untuk melihat isi pesan.</div>
+<div class="inbox-shell">
+  <aside class="inbox-list-pane">
+    <div class="inbox-list-head">
+      <div class="between flex items-center"><h2>Pesan</h2>{% if feature_live_inbox %}<span id="inboxLiveIndicator" class="chat-live"><span class="live-dot"></span> Live</span>{% endif %}</div>
+      <form class="inbox-search" method="get"><input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Cari nama, nomor, atau pesan"></form>
+    </div>
+    <div class="inbox-filters">
+      <a class="filter-pill {% if not inbox_filter %}active{% endif %}" href="{% url 'inbox' %}">Semua</a>
+      <a class="filter-pill {% if inbox_filter == 'unread' %}active{% endif %}" href="?filter=unread">Belum dibaca</a>
+      <a class="filter-pill {% if inbox_filter == 'admin' %}active{% endif %}" href="?filter=admin">Perlu Admin</a>
+      <a class="filter-pill {% if inbox_filter == 'ai' %}active{% endif %}" href="?filter=ai">AI Aktif</a>
+      <a class="filter-pill {% if inbox_filter == 'group' %}active{% endif %}" href="?filter=group">Grup</a>
+    </div>
+    <div id="conversationList" class="conversation-list" data-api-url="{% url 'inbox_conversations_api' %}" data-poll-ms="{{ live_poll_ms|default:2500 }}">
+      {% for c in conversations %}
+        <a class="conversation-item" href="{% url 'conversation_detail' c.id %}" data-conversation-id="{{ c.id }}">
+          <div class="conversation-name"><span>{{ c.contact|truncatechars:28 }}</span><small class="muted">{{ c.last_message_at|date:'H:i' }}</small></div>
+          <div class="conversation-preview">{{ c.latest_message_body|default:c.brand.name|truncatechars:78 }}</div>
+          <div class="conversation-item-status">
+            {% if c.status == 'closed' %}<span class="conversation-status status-done">Selesai</span>{% elif c.needs_handoff %}<span class="conversation-status status-help">Perlu Admin</span>{% elif c.assigned_to and not c.ai_enabled %}<span class="conversation-status status-admin">Admin Menangani</span>{% elif c.status == 'pending' %}<span class="conversation-status status-wait">Menunggu Pelanggan</span>{% elif c.ai_enabled %}<span class="conversation-status status-ai">AI Menangani</span>{% else %}<span class="conversation-status status-admin">Belum Ditangani</span>{% endif %}
+            {% if c.channel == 'whatsapp_group' or c.channel == 'group' %}<span class="badge badge-gray">Grup</span>{% endif %}
+            {% if c.unread_count %}<span class="unread-dot">{{ c.unread_count }}</span>{% endif %}
+          </div>
+        </a>
+      {% empty %}<div class="empty">Belum ada percakapan.<br><small>Periksa WhatsApp & Channel bila pesan belum masuk.</small></div>{% endfor %}
+    </div>
+  </aside>
+  <section class="chat-pane">
+    <div class="empty-chat"><div><div class="empty-chat-icon">✉</div><h2>Pilih percakapan</h2><p>Pilih pelanggan atau grup di sebelah kiri untuk membaca dan membalas pesan.</p></div></div>
+  </section>
+  <aside class="detail-pane">
+    <div class="detail-section"><h3>Cara menggunakan Inbox</h3><p class="muted" style="font-size:12px;line-height:1.55">Status percakapan dapat diubah setelah Anda membuka chat. Saat admin mengirim balasan manual, AI otomatis berhenti agar tidak terjadi balasan ganda.</p></div>
+    <div class="detail-section"><h3>Prioritas hari ini</h3><div class="detail-row"><span>Belum dibaca</span><strong>{{ unread_total }}</strong></div><div class="detail-row"><span>Perlu admin</span><strong>{{ handoff_count }}</strong></div></div>
+    <div class="detail-section advanced-only"><h3>Diagnostik</h3><p class="muted" style="font-size:11px">Mode Lanjutan menampilkan confidence, error AI, dan detail teknis pada percakapan.</p></div>
+  </aside>
 </div>
 {% endblock %}
-
 {% block scripts %}
 {% if feature_live_inbox %}
 <script>
@@ -58,129 +59,47 @@
   const list = document.getElementById('conversationList');
   const indicator = document.getElementById('inboxLiveIndicator');
   if (!list || !indicator) return;
-
   const basePoll = Math.max(Number(list.dataset.pollMs || 2500), 1500);
-  const query = window.location.search || '';
-  const apiUrl = `${list.dataset.apiUrl}${query}`;
-  let timer = null;
-  let loading = false;
-  let lastSignature = '';
-  let previousUnread = Number({{ unread_total|default:0 }});
+  const apiUrl = `${list.dataset.apiUrl}${window.location.search || ''}`;
+  let timer, loading = false, lastSignature = '';
 
-  function badge(text, className = '') {
+  function statusNode(item) {
     const node = document.createElement('span');
-    node.className = `badge ${className}`.trim();
-    node.textContent = text;
+    node.className = `conversation-status ${item.ui_status_class || ''}`;
+    node.textContent = item.ui_status || 'Belum Ditangani';
     return node;
   }
-
-  function renderConversation(item) {
+  function render(item) {
     const link = document.createElement('a');
-    link.className = 'conversation-item';
-    link.href = item.url;
-    link.dataset.conversationId = item.id;
-
-    const head = document.createElement('div');
-    head.className = 'conversation-name';
-    const name = document.createElement('span');
-    name.textContent = item.contact_name || 'Tanpa nama';
-    const time = document.createElement('small');
-    time.className = 'muted';
-    time.textContent = item.last_message_label || '';
-    head.append(name, time);
-
-    const meta = document.createElement('div');
-    meta.className = 'conversation-preview';
-    meta.textContent = `${item.brand_name} · ${item.agent_name} · ${item.channel}`;
-
-    link.append(head, meta);
-
-    if (item.last_message_preview) {
-      const preview = document.createElement('div');
-      preview.className = 'conversation-preview mt-2';
-      preview.textContent = item.last_message_preview;
-      link.appendChild(preview);
-    }
-
-    const status = document.createElement('div');
-    status.className = 'mt-2';
-    if (item.needs_handoff) {
-      status.appendChild(badge('Handoff', 'badge-red'));
-    } else if (item.ai_enabled) {
-      status.appendChild(badge('AI aktif', 'badge-green'));
-    } else {
-      status.appendChild(badge('Human', 'badge-gray'));
-    }
-    if (item.channel === 'whatsapp_group' || item.channel === 'group') {
-      status.appendChild(badge('Grup'));
-    }
-    if (item.unread_count) {
-      status.appendChild(badge(`${item.unread_count} baru`));
-    }
-    link.appendChild(status);
-    return link;
+    link.className = 'conversation-item'; link.href = item.url; link.dataset.conversationId = item.id;
+    const head = document.createElement('div'); head.className = 'conversation-name';
+    const name = document.createElement('span'); name.textContent = item.contact_name || 'Tanpa nama';
+    const time = document.createElement('small'); time.className = 'muted'; time.textContent = item.last_message_label || '';
+    head.append(name,time);
+    const preview = document.createElement('div'); preview.className = 'conversation-preview'; preview.textContent = item.last_message_preview || item.brand_name || '';
+    const footer = document.createElement('div'); footer.className = 'conversation-item-status'; footer.appendChild(statusNode(item));
+    if (item.channel === 'group' || item.channel === 'whatsapp_group') { const group = document.createElement('span'); group.className='badge badge-gray'; group.textContent='Grup'; footer.appendChild(group); }
+    if (item.unread_count) { const unread=document.createElement('span'); unread.className='unread-dot'; unread.textContent=item.unread_count; footer.appendChild(unread); }
+    link.append(head,preview,footer); return link;
   }
-
-  function renderEmpty() {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = 'Belum ada percakapan.';
-    return empty;
-  }
-
-  async function refresh(force = false) {
-    if (loading) return;
-    loading = true;
+  async function refresh() {
+    if (loading) return; loading=true;
     try {
-      const response = await fetch(apiUrl, {
-        headers: {'Accept': 'application/json'},
-        credentials: 'same-origin',
-        cache: 'no-store'
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const rows = Array.isArray(data.conversations) ? data.conversations : [];
-      const signature = JSON.stringify(rows.map(row => [
-        row.id,
-        row.last_message_at,
-        row.unread_count,
-        row.ai_enabled,
-        row.needs_handoff,
-        row.status,
-        row.last_message_preview
-      ]));
-
-      if (force || signature !== lastSignature) {
-        list.replaceChildren(...(rows.length ? rows.map(renderConversation) : [renderEmpty()]));
-        lastSignature = signature;
+      const response=await fetch(apiUrl,{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'});
+      if(!response.ok) throw new Error('HTTP '+response.status);
+      const data=await response.json(); const rows=Array.isArray(data.conversations)?data.conversations:[];
+      const signature=JSON.stringify(rows.map(r=>[r.id,r.last_message_at,r.unread_count,r.ui_status_key,r.last_message_preview]));
+      if(signature!==lastSignature){
+        if(rows.length) list.replaceChildren(...rows.map(render));
+        else {const empty=document.createElement('div');empty.className='empty';empty.textContent='Belum ada percakapan.';list.replaceChildren(empty);}
+        lastSignature=signature;
       }
-
-      const unread = rows.reduce((total, row) => total + Number(row.unread_count || 0), 0);
-      if (unread > previousUnread && document.hidden) {
-        document.title = `(${unread}) Pesan baru — RizqHub AI CRM`;
-      }
-      previousUnread = unread;
-      indicator.className = 'badge badge-green';
-      indicator.innerHTML = '<span class="live-dot"></span> Live';
-    } catch (error) {
-      indicator.className = 'badge badge-red';
-      indicator.textContent = 'Terputus';
-    } finally {
-      loading = false;
-      clearTimeout(timer);
-      timer = setTimeout(refresh, document.hidden ? Math.max(basePoll * 4, 10000) : basePoll);
-    }
+      indicator.className='chat-live'; indicator.innerHTML='<span class="live-dot"></span> Live';
+    } catch(error) { indicator.className='conversation-status status-help'; indicator.textContent='Terputus'; }
+    finally { loading=false; clearTimeout(timer); timer=setTimeout(refresh,document.hidden?Math.max(basePoll*4,10000):basePoll); }
   }
-
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      document.title = 'Unified Inbox — RizqHub AI CRM';
-      clearTimeout(timer);
-      refresh(true);
-    }
-  });
-
-  refresh(true);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(timer);refresh();}});
+  refresh();
 })();
 </script>
 {% endif %}
