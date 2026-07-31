@@ -4,7 +4,18 @@ from .crypto import decrypt_dict
 
 
 class ProviderError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retryable: bool = False,
+        uncertain: bool = False,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
+        self.uncertain = uncertain
 
 
 def send_starsender(connection, to: str, body: str, file_url: str = "") -> dict:
@@ -19,14 +30,31 @@ def send_starsender(connection, to: str, body: str, file_url: str = "") -> dict:
     }
     if file_url:
         payload["file"] = file_url
-    with httpx.Client(timeout=45) as client:
-        response = client.post(
-            "https://api.starsender.online/api/send",
-            headers={"Authorization": api_key, "Content-Type": "application/json"},
-            json=payload,
-        )
+    try:
+        with httpx.Client(timeout=45) as client:
+            response = client.post(
+                "https://api.starsender.online/api/send",
+                headers={"Authorization": api_key, "Content-Type": "application/json"},
+                json=payload,
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        raise ProviderError(
+            f"Tidak dapat terhubung ke StarSender: {exc}",
+            retryable=True,
+        ) from exc
+    except httpx.RequestError as exc:
+        raise ProviderError(
+            f"Status pengiriman StarSender tidak dapat dipastikan: {exc}",
+            uncertain=True,
+        ) from exc
     if response.is_error:
-        raise ProviderError(f"StarSender HTTP {response.status_code}: {response.text[:500]}")
+        status_code = response.status_code
+        raise ProviderError(
+            f"StarSender HTTP {status_code}: {response.text[:500]}",
+            status_code=status_code,
+            retryable=status_code == 429,
+            uncertain=status_code >= 500,
+        )
     try:
         data = response.json()
     except ValueError:

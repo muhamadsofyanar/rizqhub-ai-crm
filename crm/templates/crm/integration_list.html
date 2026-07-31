@@ -1,1 +1,29 @@
-{% extends 'crm/base.html' %}{% block topbar %}Integrasi{% endblock %}{% block content %}<div class="page-head"><div><h2>Channel & provider</h2><p>Hubungkan device StarSender ke agent dan gunakan Mailketing sebagai provider email.</p></div><a class="btn btn-primary" href="{% url 'integration_create' %}">+ Tambah integrasi</a></div><div class="grid grid-2">{% for c in connections %}<div class="card card-pad"><div class="flex between items-center"><div><span class="badge">{{ c.get_provider_display }}</span><h3>{{ c.name }}</h3><p class="muted">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }}</p></div>{% if c.is_active %}<span class="badge badge-green">Aktif</span>{% endif %}</div><p><strong>Webhook URL</strong></p><div class="codebox">{% if c.provider == 'starsender' %}{{ app_base_url }}/webhooks/starsender/{{ c.webhook_token }}/{% elif c.provider == 'mailketing' %}{{ app_base_url }}/webhooks/mailketing/{{ c.webhook_token }}/{% else %}—{% endif %}</div><div class="actions"><a class="btn btn-sm" href="{% url 'integration_edit' c.id %}">Edit</a></div></div>{% empty %}<div class="card empty">Belum ada integrasi. Tambahkan StarSender lalu salin webhook URL ke dashboard StarSender.</div>{% endfor %}</div><div class="card card-pad mt-2"><h3 class="mt-0">Urutan setup StarSender</h3><p class="muted">1. Tambah integrasi dengan provider StarSender.<br>2. Pilih brand dan agent tujuan.<br>3. Isi Device API Key dari menu Device StarSender.<br>4. Salin webhook URL di atas ke menu Webhook StarSender.<br>5. Kirim pesan uji dari nomor lain.<br>6. Periksa Unified Inbox.<br>7. Biarkan agent pada mode Draft terlebih dahulu.</p></div>{% endblock %}
+{% extends 'crm/base.html' %}
+{% block topbar %}Integrasi{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h2>Channel & provider</h2><p>Hubungkan device StarSender ke agent dan gunakan Mailketing sebagai provider email.</p></div>
+  {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<a class="btn btn-primary" href="{% url 'integration_create' %}">+ Tambah integrasi</a>{% endif %}
+</div>
+<div class="grid grid-2">
+  {% for c in connections %}
+  <div class="card card-pad">
+    <div class="flex between items-center">
+      <div><span class="badge">{{ c.get_provider_display }}</span><h3>{{ c.name }}</h3><p class="muted">{{ c.brand.name }} · {{ c.agent.name|default:'Tanpa agent' }}</p></div>
+      {% if c.is_active %}<span class="badge badge-green">Aktif</span>{% endif %}
+    </div>
+    {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}
+      <p><strong>Webhook URL rahasia</strong></p>
+      <div class="codebox">{% if c.provider == 'starsender' %}{{ app_base_url }}/webhooks/starsender/{{ c.webhook_token }}/{% elif c.provider == 'mailketing' %}{{ app_base_url }}/webhooks/mailketing/{{ c.webhook_token }}/{% else %}—{% endif %}</div>
+      <div class="actions"><a class="btn btn-sm" href="{% url 'integration_edit' c.id %}">Edit</a></div>
+    {% else %}
+      <p class="muted">Webhook dan credential hanya dapat dilihat oleh Owner/Admin.</p>
+    {% endif %}
+  </div>
+  {% empty %}<div class="card empty">Belum ada integrasi. Owner/Admin dapat menambahkan koneksi provider.</div>{% endfor %}
+</div>
+<div class="card card-pad mt-2">
+  <h3 class="mt-0">Urutan setup StarSender</h3>
+  <p class="muted">1. Tambahkan akun/device melalui StarSender Center.<br>2. Petakan Brand dan Agent.<br>3. Isi Device Key langsung pada dashboard CRM.<br>4. Pasang URL Webhook Premium yang ditampilkan untuk Owner/Admin.<br>5. Kirim pesan uji dari nomor lain.<br>6. Periksa Unified Inbox.<br>7. Aktifkan AI hanya setelah Agent dan Knowledge Base diuji.</p>
+</div>
+{% endblock %}

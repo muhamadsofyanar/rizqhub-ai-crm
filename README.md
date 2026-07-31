@@ -1,259 +1,189 @@
-# RizqHub AI CRM
+# RizqHub AI CRM V4 Consolidated
 
-Starter SaaS CRM multi-brand dan multi-agent yang siap dijalankan dengan Docker Compose di Coolify. Paket ini dibangun untuk tiga bisnis awal:
+Rilis gabungan untuk CRM multi-brand dan multi-agent yang berjalan dengan Django, PostgreSQL, Redis, Celery, Gunicorn, Docker Compose, dan Coolify. V4 dirancang agar **kode dipasang sekali**, lalu modul diaktifkan dari dashboard melalui feature flag database tanpa redeploy berulang.
 
-- Jasa Legalitas
-- STIFIn
-- Produk Digital
+## Prinsip rilis
 
-Setiap bisnis memiliki brand, AI agent, knowledge base, dan sales pipeline sendiri. Sistem menerima pesan WhatsApp melalui webhook StarSender, menyimpan kontak dan percakapan, menyiapkan atau mengirim jawaban AI, serta menyediakan human handoff ke CS.
+- Upgrade bersifat **additive**: tabel V4 ditambahkan tanpa menghapus tabel/data V3.
+- Fitur berisiko seperti automation dan broadcast tetap **nonaktif secara default**.
+- Account API Key, Device Key, dan API key AI disimpan terenkripsi atau melalui environment; tidak boleh dimasukkan ke GitHub.
+- Startup menjalankan `v4_preflight` dan tidak membuka web jika tabel atau credential encryption utama bermasalah.
+- Worker dan Beat baru dimulai setelah service web sehat.
 
-## Status implementasi
+## Modul utama
 
-### Sudah berfungsi
+### Operasional inbox
 
-- Login, super admin, workspace/tenant, dan membership.
-- Multi-brand dan multi-agent.
-- Kontak CRM dan Customer 360 sederhana.
-- Unified Inbox WhatsApp.
-- Webhook StarSender, deduplication, queue, dan outbound API.
-- AI Agent Builder dengan mode Draft, Approval, Limited, Autonomous, dan Human.
-- Knowledge base berbasis entri teks dan retrieval sederhana.
-- Playground pengujian agent.
-- Human takeover, aktif/nonaktif AI, handoff keyword.
-- Sales pipeline per brand.
-- Integrasi Mailketing: credential, webhook event, dan pengiriman email.
-- Campaign WhatsApp/email berbasis consent, tag filter, personalization, throttling, dan status per penerima.
-- PostgreSQL, Redis, Celery worker + beat, Gunicorn, WhiteNoise.
-- Enkripsi credential provider.
-- Health check, persistent volume, bootstrap admin, serta data awal tiga bisnis.
+- Inbox Live untuk daftar percakapan dan isi pesan tanpa refresh manual.
+- Pesan personal dan grup dalam Unified Inbox.
+- Status pesan `queued`, `sending`, `sent`, `delivered`, `read`, `failed`, dan `status tidak pasti`.
+- Claim atomik mencegah task ganda memanggil provider bersamaan. Retry otomatis hanya dilakukan pada kegagalan yang aman; timeout/hasil ambigu dikarantina sebagai `status tidak pasti` agar tidak mengirim pesan ganda.
+- Human takeover, aktivasi AI, assignment, catatan internal, dan approval draft.
 
-### Fondasi tersedia, tetapi perlu pengembangan lanjutan
+### AI dan keamanan jawaban
 
-- Automation visual berbasis trigger-condition-action.
-- Upload PDF/DOCX/XLSX serta vector search/pgvector.
-- Order, payment gateway, booking, invoice, dan billing SaaS.
-- Drag-and-drop pipeline.
-- Role permission granular di UI.
-- WhatsApp delivery/read status apabila payload provider tersedia.
-- Subscription, quota, metering biaya, white-label, dan public API.
+- Gemini/OpenAI provider.
+- Smart Handoff V2: sapaan dan pesan tes tidak memicu handoff.
+- Confidence rendah meminta klarifikasi; handoff otomatis hanya untuk pemicu kuat atau bila diaktifkan secara khusus.
+- Customer Memory dasar agar agent tidak menanyakan data yang sudah diberikan.
+- Knowledge retrieval tanpa fallback ke sumber yang tidak relevan.
+- Pencegahan thought leakage dan jawaban terpotong.
+- Batas panjang jawaban dan jumlah pertanyaan per balasan.
+- Evaluasi jawaban AI dan metadata sumber/confidence.
 
-Aplikasi ini adalah fondasi produksi untuk pilot/internal use, bukan klaim bahwa seluruh blueprint enterprise sudah selesai dalam satu paket.
+### StarSender multi-device
 
-## Arsitektur
+- Satu atau beberapa akun StarSender menggunakan **Account API Key**.
+- Sinkronisasi seluruh device pada akun.
+- **Device Key** terpisah untuk tiap device.
+- Mapping setiap device ke Brand dan AI Agent.
+- Satu webhook Premium tingkat akun; sumber pesan dibedakan memakai `device_id`.
+- Balasan inbox selalu dikirim melalui device asal percakapan.
+- Sinkronisasi grup per device.
+- Mode AI grup: nonaktif, mention-only, draft, atau autonomous.
+
+### Personal, grup, kategori, dan preset
+
+- Broadcast personal ke kontak ber-consent atau nomor manual yang divalidasi.
+- Broadcast ke satu atau banyak grup pada device yang sama.
+- Kategori grup.
+- Preset statis dan dinamis.
+- Grup internal dapat dikunci agar tidak pernah menjadi tujuan broadcast.
+- Draft, preview daftar penerima, konfirmasi `KIRIM`, delay minimal, scheduling, cancel, claim atomik, dan status per tujuan. Hasil provider yang ambigu tidak dikirim ulang otomatis.
+- Fitur personal/group broadcast baru dapat dipakai setelah diaktifkan dengan konfirmasi `AKTIFKAN` pada Feature Settings.
+
+### Platform dan observabilitas
+
+- Pipeline, task, automation foundation, n8n webhook action, campaign legacy, workspace/user foundation.
+- System Health untuk database, Redis, webhook, device mapping, pesan gagal, broadcast, backup, notifikasi, dan audit log.
+- Backup PostgreSQL otomatis dengan checksum dan retensi; script pra-upgrade juga memvalidasi archive dengan `pg_restore --list`.
+- Rate limit dan batas ukuran payload webhook.
+
+## Aktivasi aman setelah deployment
+
+Fitur berikut aktif secara default:
 
 ```text
-Browser
-  │
-  ▼
-Django + Gunicorn (web)
-  ├── CRM, dashboard, inbox, agent builder
-  ├── StarSender webhook
-  └── Mailketing webhook
-  │
-  ├──────── PostgreSQL
-  │
-  └──────── Redis ───── Celery worker
-                         ├── Proses pesan masuk
-                         ├── Panggil OpenAI Responses API
-                         └── Kirim balasan via StarSender
+Inbox Live
+Retry Pesan
+Evaluasi AI
+Smart Handoff V2
+Customer Memory
+StarSender Multi-Device
+Backup Otomatis
 ```
 
+Fitur berikut nonaktif secara default:
 
-## Aktivasi V3 yang disarankan
-
-Paket V3 memuat seluruh modul dalam satu source, tetapi modul berisiko dimatikan secara default. Mulai dengan konfigurasi berikut:
-
-```env
-FEATURE_LIVE_INBOX=true
-FEATURE_MESSAGE_RETRY=true
-FEATURE_AI_EVALUATION=true
-FEATURE_AUTOMATION=false
-FEATURE_CAMPAIGN=false
-FEATURE_SAAS=false
-FEATURE_BACKUP=true
+```text
+Automation & n8n
+Broadcast Personal
+Broadcast Grup
+Campaign Legacy
+Workspace & SaaS
 ```
 
-Setelah inbox, handoff, knowledge base, dan retry pesan selesai diuji, aktifkan automation dan campaign satu per satu. Service `beat` diperlukan untuk campaign terjadwal, automation tanpa balasan, dan backup harian.
+Aktivasi dilakukan melalui:
 
-> **Penting untuk upgrade instalasi yang sudah berjalan:** buat backup database terlebih dahulu. V3 menambahkan tabel baru secara additive melalui `migrate --run-syncdb`, tetapi deployment produksi tetap harus diuji dan dilakukan pada jam sepi.
+```text
+CRM → Feature Settings
+```
+
+Fitur berisiko mewajibkan pemilik/admin mengetik `AKTIFKAN`. Perubahan berlaku pada request/job berikutnya dan tidak memerlukan redeploy.
+
+## Urutan setup StarSender
+
+1. Buka **StarSender Center**.
+2. Tambahkan akun dan masukkan Account API Key.
+3. Jalankan **Uji koneksi** lalu **Sinkronkan device**.
+4. Buka setiap device, masukkan Device Key, lalu pilih Brand dan Agent.
+5. Aktifkan `send_enabled` hanya pada device yang sudah diuji.
+6. Salin webhook Premium akun dan pasang pada setiap device StarSender terkait.
+7. Kirim pesan personal uji; pastikan percakapan masuk ke brand/agent dan dibalas melalui device yang sama.
+8. Jalankan **Sinkronkan grup** untuk setiap device.
+9. Kunci grup internal, atur kategori, mode AI, dan preset.
+10. Buat broadcast sebagai draft; aktifkan feature broadcast hanya setelah daftar penerima dan consent/izin grup diperiksa.
+
+Baca [`docs/STARSENDER-MULTIDEVICE.md`](docs/STARSENDER-MULTIDEVICE.md) untuk detail routing dan pengujian, serta [`docs/RELEASE-MANIFEST.md`](docs/RELEASE-MANIFEST.md) untuk batas fitur RC1.
+
+## Upgrade dari V3
+
+Gunakan panduan [`UPGRADE-V4.md`](UPGRADE-V4.md). Ringkasnya:
+
+1. Backup PostgreSQL dan verifikasi file tidak kosong.
+2. Upload seluruh isi paket V4 ke root repository, menimpa file lama.
+3. Jangan mengubah environment secret/database yang sudah berfungsi.
+4. Commit dan lakukan satu kali redeploy.
+5. Pastikan `postgres`, `redis`, `web`, `worker`, dan `beat` sehat.
+6. Jalankan smoke test dan uji inbox personal sebelum mengatur multi-device/grup.
+7. Aktivasi modul berisiko dari Feature Settings, bukan environment.
 
 ## Menjalankan lokal
 
-1. Salin environment.
-
 ```bash
 cp .env.example .env
-```
-
-2. Buat secret.
-
-```bash
 python scripts/generate_secrets.py
-```
-
-Salin hasilnya ke `.env`, kemudian isi `ADMIN_EMAIL`, `ADMIN_PASSWORD`, dan kredensial lain.
-
-3. Jalankan.
-
-```bash
 docker compose up -d --build
 ```
 
-4. Buka aplikasi pada port yang diproksikan oleh Docker/Coolify. Untuk lokal, tambahkan sementara pada service `web`:
+Untuk QA statis tanpa Django:
 
-```yaml
-ports:
-  - "8000:8000"
+```bash
+python scripts/static_qa.py
 ```
 
-Lalu buka `http://localhost:8000`.
+Di dalam container web setelah konfigurasi database tersedia:
 
-## Deployment Coolify
-
-Panduan rinci tersedia di [`docs/COOLIFY.md`](docs/COOLIFY.md).
-
-Ringkasnya:
-
-1. Buat repository GitHub baru.
-2. Upload seluruh isi folder ini ke root repository.
-3. Di Coolify: **Project → Add Resource → Private Repository/GitHub App**.
-4. Pilih build pack **Docker Compose**.
-5. Base directory `/` dan compose location `/docker-compose.yml`.
-6. Masukkan seluruh variable wajib dari `.env.example`.
-7. Hubungkan domain ke service `web`, port `8000`.
-8. Deploy.
-9. Login memakai `ADMIN_EMAIL` dan `ADMIN_PASSWORD`.
-
-## Setup StarSender
-
-1. Login aplikasi.
-2. Buka **Integrasi → Tambah integrasi**.
-3. Provider: `StarSender`.
-4. Pilih brand dan agent.
-5. Isi Device API Key dari StarSender.
-6. Simpan, lalu salin webhook URL yang ditampilkan.
-7. Masukkan URL tersebut ke menu webhook StarSender.
-8. Kirim pesan uji dari nomor lain.
-9. Periksa **Unified Inbox**.
-10. Pertahankan agent pada mode `Draft only` sampai knowledge dan jawaban selesai diuji.
-
-Format webhook StarSender yang didukung:
-
-```json
-{
-  "device_id": "device-id",
-  "device": "Nama Device - 628xxx",
-  "message_id": "message-id",
-  "from": "628123456789",
-  "push_name": "Nama Pelanggan",
-  "message": "Saya ingin membuat PT",
-  "file": "",
-  "is_group": false,
-  "is_me": false,
-  "timestamp": 1760000000
-}
+```bash
+python manage.py check
+python manage.py v4_preflight
 ```
 
-Parser juga menerima format webhook dasar `message`, `from`, dan `timestamp`.
-
-## Setup AI
-
-Aplikasi mendukung **Gemini** dan **OpenAI**. Untuk memakai Gemini, masukkan pada environment Coolify:
+## Environment utama
 
 ```env
+DJANGO_SECRET_KEY=...
+POSTGRES_PASSWORD=...
+APP_ENCRYPTION_KEY=...
+APP_BASE_URL=https://crm.domainanda.com
+ALLOWED_HOSTS=crm.domainanda.com
+CSRF_TRUSTED_ORIGINS=https://crm.domainanda.com
+
 AI_PROVIDER=gemini
-GEMINI_API_KEY=isi-api-key-google-ai-studio
+GEMINI_API_KEY=...
 GEMINI_MODEL=gemini-3.6-flash
 AUTO_REPLY_DEFAULT=false
+
+WEB_CONCURRENCY=3
+CELERY_CONCURRENCY=2
+LIVE_INBOX_POLL_SECONDS=2.5
+CAMPAIGN_MAX_RECIPIENTS=500
+WEBHOOK_RATE_LIMIT_PER_MINUTE=180
+BACKUP_RETENTION_DAYS=14
+BACKUP_HOUR=2
 ```
 
-Jangan menambahkan tanda kutip dan jangan mengunggah API key ke GitHub. Sebagai alternatif, gunakan `AI_PROVIDER=auto`; aplikasi akan memilih Gemini bila `GEMINI_API_KEY` tersedia, lalu menggunakan OpenAI bila hanya `OPENAI_API_KEY` yang tersedia.
+Account API Key dan Device Key StarSender dimasukkan melalui dashboard, bukan environment.
 
-Konfigurasi OpenAI tetap didukung:
+## Batas rilis
 
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5-mini
-AUTO_REPLY_DEFAULT=false
-```
+V4 adalah **release candidate untuk pilot produksi**, bukan jaminan bahwa semua kombinasi payload StarSender, volume broadcast, atau kebijakan bisnis sudah teruji pada akun produksi Anda. Fitur berisiko sengaja dipagari dengan feature flag, consent, permission, delay, idempotency, audit log, dan aktivasi manual. Tetap lakukan pengujian satu device, satu nomor, dan satu grup terlebih dahulu.
 
-`AUTO_REPLY_DEFAULT=false` adalah pilihan aman. Percakapan baru tidak langsung dibalas otomatis. CS dapat membuka percakapan dan menekan **Aktifkan AI** setelah alur teruji.
-
-### Mode agent
-
-- `Draft only`: AI membuat draft internal.
-- `Perlu persetujuan`: draft menunggu CS.
-- `Auto reply terbatas`: dapat mengirim otomatis saat AI diaktifkan.
-- `Autonomous`: dapat mengirim otomatis saat AI diaktifkan.
-- `Human only`: AI tidak mengirim jawaban.
-
-Starter ini belum menjalankan tool bisnis berisiko seperti payment/refund atau perubahan data otomatis. Itu harus ditambahkan dengan validasi, permission, idempotency, dan audit log.
-
-## Setup Mailketing
-
-1. Tambah integrasi dengan provider `Mailketing`.
-2. Isi API token, nama pengirim, dan email pengirim yang sudah diverifikasi.
-3. Salin webhook URL dari aplikasi ke menu Integration → Webhook di Mailketing.
-
-Service pengiriman tersedia pada `crm/services/providers.py` melalui fungsi `send_mailketing()` dan dapat dipakai pada campaign/task berikutnya.
-
-## Data awal
-
-Perintah bootstrap otomatis membuat:
-
-- Workspace `RizqHub`.
-- Admin dari environment.
-- Brand Jasa Legalitas, STIFIn, dan Produk Digital.
-- Tiga AI agent.
-- Pipeline dan stage per brand.
-- Knowledge starter berupa batasan dan data awal pelanggan.
-
-Bootstrap idempotent dan aman dijalankan ulang.
-
-## Struktur repository
+## Struktur penting
 
 ```text
-config/                  Django settings, URL, Celery
-crm/
-  management/commands/   bootstrap dan wait_for_db
-  services/              AI, encryption, provider, inbound parser
-  static/                UI stylesheet
-  templates/             dashboard dan halaman CRM
-  models.py               model multi-tenant
-  tasks.py                Celery jobs
-  views.py                web UI dan webhook
-scripts/                  generator secret
-docs/                     panduan deployment dan arsitektur
-Dockerfile
-docker-compose.yml
+crm/models.py                         Model additive V4
+crm/services/starsender.py            Account/device/group API dan pengiriman
+crm/services/inbound.py               Parser webhook personal/grup
+crm/services/handoff.py               Smart Handoff V2
+crm/services/features.py              Feature flag database
+crm/tasks.py                           Queue, retry, sync, broadcast, backup
+crm/management/commands/v4_preflight.py Startup guard
+scripts/static_qa.py                   QA statis rilis
+scripts/backup_from_host.sh            Backup sebelum upgrade
+UPGRADE-V4.md                          Panduan satu kali deployment
 ```
 
-## Keamanan penting
+## Keamanan
 
-- Jangan commit `.env`.
-- Jangan membuka PostgreSQL atau Redis ke internet.
-- Gunakan domain HTTPS.
-- Aktifkan MFA pada Coolify dan GitHub.
-- Ganti password awal setelah login.
-- Credential StarSender/Mailketing disimpan terenkripsi.
-- URL webhook mengandung token rahasia; rotasi dengan membuat koneksi baru bila bocor.
-- Untuk legalitas dan STIFIn, gunakan mode Draft/Approval dan human handoff.
-- Lakukan backup volume PostgreSQL secara rutin.
-
-Baca [`SECURITY.md`](SECURITY.md) sebelum membuka aplikasi kepada klien eksternal.
-
-## Pengembangan schema
-
-Starter menggunakan `MIGRATION_MODULES = {"crm": None}` dan `migrate --run-syncdb` agar paket pertama dapat langsung membuat seluruh tabel CRM. Sebelum melakukan perubahan model setelah aplikasi berisi data produksi, ubah ke migration Django formal:
-
-1. Hapus pengaturan `MIGRATION_MODULES`.
-2. Buat migration awal pada database development baru.
-3. Terapkan strategi baseline/fake migration secara hati-hati pada database produksi.
-
-Jangan mengubah model produksi tanpa backup dan migration plan.
-
-## Lisensi
-
-Kode starter ini disediakan untuk proyek Anda. Periksa secara terpisah hak penggunaan komersial, resale, agency, atau white-label dari StarSender, Mailketing, dan provider AI yang digunakan.
+Baca [`SECURITY.md`](SECURITY.md) dan [`docs/SAFETY-CHECKLIST.md`](docs/SAFETY-CHECKLIST.md). Jangan mengirim API key melalui chat, screenshot, atau commit GitHub.

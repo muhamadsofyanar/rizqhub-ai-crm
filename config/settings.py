@@ -90,6 +90,9 @@ REFERRER_POLICY = "same-origin"
 SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
 SECURE_HSTS_PRELOAD = False
+# Bound request bodies at Django level as well as in webhook validation. This
+# also protects chunked requests that do not provide Content-Length.
+DATA_UPLOAD_MAX_MEMORY_SIZE = env.int("WEBHOOK_MAX_BYTES", default=1024 * 1024)
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 CACHES = {
@@ -116,6 +119,22 @@ CELERY_BEAT_SCHEDULE = {
         "task": "crm.tasks.scan_no_reply_automations",
         "schedule": 60.0,
     },
+    "run-due-broadcasts": {
+        "task": "crm.tasks.run_due_broadcasts",
+        "schedule": 60.0,
+    },
+    "sync-starsender-devices": {
+        "task": "crm.tasks.sync_all_starsender_devices",
+        "schedule": 600.0,
+    },
+    "sync-starsender-groups": {
+        "task": "crm.tasks.sync_all_starsender_groups",
+        "schedule": 1800.0,
+    },
+    "recover-stale-provider-sends": {
+        "task": "crm.tasks.recover_stale_provider_sends",
+        "schedule": 300.0,
+    },
 }
 
 APP_BASE_URL = env("APP_BASE_URL", default="http://localhost:8000").rstrip("/")
@@ -130,9 +149,9 @@ AUTO_REPLY_DEFAULT = env.bool("AUTO_REPLY_DEFAULT", default=False)
 FEATURE_LIVE_INBOX = env.bool("FEATURE_LIVE_INBOX", default=True)
 FEATURE_MESSAGE_RETRY = env.bool("FEATURE_MESSAGE_RETRY", default=True)
 FEATURE_AI_EVALUATION = env.bool("FEATURE_AI_EVALUATION", default=True)
-FEATURE_AUTOMATION = env.bool("FEATURE_AUTOMATION", default=True)
-FEATURE_CAMPAIGN = env.bool("FEATURE_CAMPAIGN", default=True)
-FEATURE_SAAS = env.bool("FEATURE_SAAS", default=True)
+FEATURE_AUTOMATION = env.bool("FEATURE_AUTOMATION", default=False)
+FEATURE_CAMPAIGN = env.bool("FEATURE_CAMPAIGN", default=False)
+FEATURE_SAAS = env.bool("FEATURE_SAAS", default=False)
 FEATURE_BACKUP = env.bool("FEATURE_BACKUP", default=True)
 LIVE_INBOX_POLL_SECONDS = env.float("LIVE_INBOX_POLL_SECONDS", default=2.5)
 CAMPAIGN_MAX_RECIPIENTS = env.int("CAMPAIGN_MAX_RECIPIENTS", default=500)
@@ -141,12 +160,14 @@ WEBHOOK_RATE_LIMIT_PER_MINUTE = env.int("WEBHOOK_RATE_LIMIT_PER_MINUTE", default
 BACKUP_DIR = env("BACKUP_DIR", default="/app/backups")
 BACKUP_RETENTION_DAYS = env.int("BACKUP_RETENTION_DAYS", default=14)
 BACKUP_HOUR = env.int("BACKUP_HOUR", default=2)
-if FEATURE_BACKUP:
-    CELERY_BEAT_SCHEDULE["daily-database-backup"] = {
-        "task": "crm.tasks.create_scheduled_backup",
-        "schedule": crontab(hour=BACKUP_HOUR, minute=0),
-    }
+# Keep the scheduler entry present at all times. The task checks the database
+# feature flag per tenant, so Backup can be enabled/disabled from the dashboard
+# without rebuilding or redeploying the application.
+CELERY_BEAT_SCHEDULE["daily-database-backup"] = {
+    "task": "crm.tasks.create_scheduled_backup",
+    "schedule": crontab(hour=BACKUP_HOUR, minute=0),
+}
 
-# Existing installations were created with syncdb. New V3 tables are additive and
+# Existing installations were created with syncdb. New V4 tables are additive and
 # are created safely by migrate --run-syncdb without altering existing tables.
 MIGRATION_MODULES = {"crm": None}

@@ -1,0 +1,4 @@
+{% extends 'crm/base.html' %}{% block topbar %}Buat Broadcast{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Buat Broadcast</h2><p>Form membuat draft. Tidak ada pesan yang dikirim sebelum halaman konfirmasi.</p></div></div>
+<div class="card card-pad"><form method="post">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<div class="form-row"><label>{{ field.label }}</label>{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}<button class="btn btn-primary" type="submit">Simpan draft & tinjau penerima</button></form></div>
+{% endblock %}

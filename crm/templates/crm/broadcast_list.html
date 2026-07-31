@@ -1,0 +1,7 @@
+{% extends 'crm/base.html' %}{% block topbar %}Broadcast Center{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Broadcast Center</h2><p>Kirim personal atau grup melalui device yang dipilih, dengan preview, delay, audit, dan pembatalan antrean.</p></div><a class="btn btn-primary" href="{% url 'broadcast_create' %}">Buat broadcast</a></div>
+<div class="alert alert-success">Pengiriman massal dinonaktifkan secara default. Draft tetap dapat disiapkan; aktivasi dilakukan di Feature Settings.</div>
+<div class="card"><table><thead><tr><th>Nama</th><th>Target</th><th>Device</th><th>Status</th><th>Progres</th><th>Dibuat</th></tr></thead><tbody>
+{% for item in broadcasts %}<tr><td><a href="{% url 'broadcast_detail' item.pk %}"><strong>{{ item.name }}</strong></a></td><td>{{ item.get_target_type_display }}</td><td>{{ item.device }}</td><td><span class="badge">{{ item.get_status_display }}</span></td><td>{{ item.sent_count }} terkirim · {{ item.failed_count }} gagal · {{ item.total_count }} total</td><td>{{ item.created_at|date:'d M Y H:i' }}</td></tr>{% empty %}<tr><td colspan="6">Belum ada broadcast.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -225,7 +225,15 @@ class Conversation(TenantOwnedModel):
 
 class Message(TenantOwnedModel):
     DIRECTION_CHOICES = [("inbound", "Inbound"), ("outbound", "Outbound"), ("internal", "Internal")]
-    STATUS_CHOICES = [("queued", "Queued"), ("sent", "Sent"), ("delivered", "Delivered"), ("read", "Read"), ("failed", "Failed")]
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("sending", "Sending"),
+        ("sent", "Sent"),
+        ("delivered", "Delivered"),
+        ("read", "Read"),
+        ("failed", "Failed"),
+        ("uncertain", "Status tidak pasti"),
+    ]
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     direction = models.CharField(max_length=20, choices=DIRECTION_CHOICES)
     sender_type = models.CharField(max_length=20, default="contact")
@@ -480,3 +488,393 @@ class BackupRecord(TenantOwnedModel):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class FeatureFlag(TenantOwnedModel):
+    """Runtime feature switches stored in the database.
+
+    Dangerous features default to disabled and can be enabled from the dashboard
+    without rebuilding or redeploying the application.
+    """
+
+    key = models.SlugField(max_length=100)
+    label = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    enabled = models.BooleanField(default=False)
+    is_dangerous = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ["label"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "key"], name="unique_tenant_feature_flag")
+        ]
+
+    def __str__(self):
+        return f"{self.tenant.name} — {self.label}"
+
+
+class AgentRuntimePolicy(TenantOwnedModel):
+    """Operational guardrails kept outside the legacy Agent table."""
+
+    agent = models.OneToOneField(Agent, on_delete=models.CASCADE, related_name="runtime_policy")
+    clarification_threshold = models.PositiveSmallIntegerField(default=45)
+    reply_threshold = models.PositiveSmallIntegerField(default=70)
+    auto_handoff_low_confidence = models.BooleanField(default=False)
+    max_reply_chars = models.PositiveIntegerField(default=1200)
+    max_questions = models.PositiveSmallIntegerField(default=2)
+    reply_delay_seconds = models.PositiveSmallIntegerField(default=0)
+    safe_clarification_text = models.TextField(
+        default=(
+            "Saya perlu sedikit informasi tambahan agar jawabannya tepat. "
+            "Boleh jelaskan kebutuhan utama Anda secara singkat?"
+        )
+    )
+    hard_handoff_keywords = models.TextField(
+        default=(
+            "manusia,admin,customer service,staf,konsultan,notaris,pengacara,"
+            "komplain,refund,pengembalian dana,sengketa,marah,kecewa"
+        )
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["agent__brand__name", "agent__name"]
+
+    def __str__(self):
+        return f"Policy — {self.agent}"
+
+
+class ConversationControl(TenantOwnedModel):
+    STATE_CHOICES = [
+        ("ai_active", "AI Active"),
+        ("clarification", "Clarification Needed"),
+        ("waiting_human", "Waiting for Human"),
+        ("human_active", "Human Active"),
+        ("resolved", "Resolved"),
+    ]
+    conversation = models.OneToOneField(
+        Conversation, on_delete=models.CASCADE, related_name="control"
+    )
+    state = models.CharField(max_length=30, choices=STATE_CHOICES, default="ai_active")
+    last_confidence = models.PositiveSmallIntegerField(default=0)
+    handoff_count = models.PositiveIntegerField(default=0)
+    last_ai_error = models.TextField(blank=True)
+    last_handoff_at = models.DateTimeField(null=True, blank=True)
+    last_ai_reply_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+
+class ContactMemory(TenantOwnedModel):
+    contact = models.OneToOneField(Contact, on_delete=models.CASCADE, related_name="memory")
+    summary = models.TextField(blank=True)
+    facts = models.JSONField(default=dict, blank=True)
+    missing_fields = models.JSONField(default=list, blank=True)
+    last_extracted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+
+class AppNotification(TenantOwnedModel):
+    LEVEL_CHOICES = [
+        ("info", "Info"),
+        ("warning", "Warning"),
+        ("error", "Error"),
+        ("critical", "Critical"),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default="info")
+    title = models.CharField(max_length=180)
+    message = models.TextField(blank=True)
+    link = models.CharField(max_length=500, blank=True)
+    is_read = models.BooleanField(default=False)
+    dedupe_key = models.CharField(max_length=250, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "is_read", "created_at"])]
+
+
+class StarSenderAccount(TenantOwnedModel):
+    name = models.CharField(max_length=150)
+    encrypted_account_key = models.TextField(blank=True)
+    webhook_token = models.CharField(max_length=100, default=secrets.token_urlsafe, unique=True)
+    is_active = models.BooleanField(default=True)
+    auto_sync_devices = models.BooleanField(default=True)
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    last_sync_status = models.CharField(max_length=30, blank=True)
+    last_error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="unique_tenant_starsender_account")
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class StarSenderDevice(TenantOwnedModel):
+    STATUS_CHOICES = [
+        ("connected", "Connected"),
+        ("disconnected", "Disconnected"),
+        ("scanning", "Scanning"),
+        ("unknown", "Unknown"),
+        ("disabled", "Disabled"),
+        ("credential_missing", "Credential Missing"),
+    ]
+    account = models.ForeignKey(
+        StarSenderAccount, on_delete=models.CASCADE, related_name="devices"
+    )
+    external_device_id = models.CharField(max_length=120)
+    name = models.CharField(max_length=180, blank=True)
+    phone_number = models.CharField(max_length=50, blank=True)
+    connection_status = models.CharField(
+        max_length=30, choices=STATUS_CHOICES, default="unknown"
+    )
+    encrypted_device_key = models.TextField(blank=True)
+    brand = models.ForeignKey(
+        Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name="starsender_devices"
+    )
+    agent = models.ForeignKey(
+        Agent, on_delete=models.SET_NULL, null=True, blank=True, related_name="starsender_devices"
+    )
+    connection = models.OneToOneField(
+        ChannelConnection,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="starsender_device",
+    )
+    send_enabled = models.BooleanField(default=False)
+    group_sync_enabled = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+    is_fallback = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_group_sync_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["account__name", "name", "phone_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "external_device_id"], name="unique_starsender_account_device"
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "connection_status", "send_enabled"])]
+
+    def __str__(self):
+        return self.name or self.phone_number or self.external_device_id
+
+
+class WhatsAppGroup(TenantOwnedModel):
+    AI_MODE_CHOICES = [
+        ("off", "AI Nonaktif"),
+        ("mention", "AI hanya saat disebut"),
+        ("draft", "AI membuat draft"),
+        ("autonomous", "AI Autonomous"),
+    ]
+    device = models.ForeignKey(
+        StarSenderDevice, on_delete=models.CASCADE, related_name="whatsapp_groups"
+    )
+    external_group_id = models.CharField(max_length=200)
+    name = models.CharField(max_length=220)
+    contact = models.OneToOneField(
+        Contact, on_delete=models.SET_NULL, null=True, blank=True, related_name="whatsapp_group"
+    )
+    is_active = models.BooleanField(default=True)
+    is_locked = models.BooleanField(
+        default=False,
+        help_text="Grup yang dikunci tidak dapat menjadi tujuan broadcast.",
+    )
+    ai_mode = models.CharField(max_length=20, choices=AI_MODE_CHOICES, default="off")
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_message_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["device__name", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "external_group_id"], name="unique_device_whatsapp_group"
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "is_active", "name"])]
+
+    def __str__(self):
+        return f"{self.name} — {self.device}"
+
+
+class GroupCategory(TenantOwnedModel):
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="unique_tenant_group_category")
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class GroupCategoryMembership(TenantOwnedModel):
+    group = models.ForeignKey(WhatsAppGroup, on_delete=models.CASCADE, related_name="category_links")
+    category = models.ForeignKey(GroupCategory, on_delete=models.CASCADE, related_name="group_links")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["group", "category"], name="unique_group_category_link")
+        ]
+
+
+class GroupPreset(TenantOwnedModel):
+    TYPE_CHOICES = [("static", "Statis"), ("dynamic", "Dinamis berdasarkan kategori")]
+    name = models.CharField(max_length=180)
+    description = models.TextField(blank=True)
+    preset_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="static")
+    brand = models.ForeignKey(
+        Brand, on_delete=models.SET_NULL, null=True, blank=True, related_name="group_presets"
+    )
+    category = models.ForeignKey(
+        GroupCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="presets"
+    )
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="unique_tenant_group_preset")
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class GroupPresetMember(TenantOwnedModel):
+    preset = models.ForeignKey(GroupPreset, on_delete=models.CASCADE, related_name="members")
+    group = models.ForeignKey(WhatsAppGroup, on_delete=models.CASCADE, related_name="preset_links")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["preset", "group"], name="unique_preset_group_member")
+        ]
+
+
+class StarSenderInboundEvent(TenantOwnedModel):
+    STATUS_CHOICES = [
+        ("received", "Received"),
+        ("processing", "Processing"),
+        ("processed", "Processed"),
+        ("ignored", "Ignored"),
+        ("needs_mapping", "Needs Mapping"),
+        ("retrying", "Retrying"),
+        ("failed", "Failed"),
+    ]
+    account = models.ForeignKey(
+        StarSenderAccount, on_delete=models.CASCADE, related_name="inbound_events"
+    )
+    device = models.ForeignKey(
+        StarSenderDevice, on_delete=models.SET_NULL, null=True, blank=True, related_name="inbound_events"
+    )
+    external_event_id = models.CharField(max_length=200, blank=True)
+    payload_hash = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="received")
+    attempts = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["account", "payload_hash"], name="unique_starsender_account_payload"
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "status", "created_at"])]
+
+
+class Broadcast(TenantOwnedModel):
+    TARGET_CHOICES = [("personal", "Personal"), ("group", "Grup")]
+    STATUS_CHOICES = [
+        ("draft", "Draft"),
+        ("scheduled", "Scheduled"),
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("cancelled", "Cancelled"),
+        ("failed", "Failed"),
+    ]
+    name = models.CharField(max_length=180)
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES)
+    device = models.ForeignKey(
+        StarSenderDevice, on_delete=models.PROTECT, related_name="broadcasts"
+    )
+    preset = models.ForeignKey(
+        GroupPreset, on_delete=models.SET_NULL, null=True, blank=True, related_name="broadcasts"
+    )
+    message_type = models.CharField(max_length=20, default="text")
+    body = models.TextField(blank=True)
+    file_url = models.URLField(blank=True)
+    delay_seconds = models.PositiveIntegerField(default=30)
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    total_count = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "status", "scheduled_at"])]
+
+    def __str__(self):
+        return self.name
+
+
+class BroadcastRecipient(TenantOwnedModel):
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("sending", "Sending"),
+        ("sent", "Sent"),
+        ("failed", "Failed"),
+        ("uncertain", "Status tidak pasti"),
+        ("cancelled", "Cancelled"),
+        ("skipped", "Skipped"),
+    ]
+    broadcast = models.ForeignKey(Broadcast, on_delete=models.CASCADE, related_name="recipients")
+    contact = models.ForeignKey(Contact, on_delete=models.SET_NULL, null=True, blank=True)
+    group = models.ForeignKey(WhatsAppGroup, on_delete=models.SET_NULL, null=True, blank=True)
+    external_target = models.CharField(max_length=220)
+    display_name = models.CharField(max_length=220, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
+    attempts = models.PositiveIntegerField(default=0)
+    provider_message_id = models.CharField(max_length=200, blank=True)
+    provider_response = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    idempotency_key = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["broadcast", "idempotency_key"], name="unique_broadcast_recipient_key"
+            )
+        ]
+        indexes = [models.Index(fields=["status", "scheduled_for"])]

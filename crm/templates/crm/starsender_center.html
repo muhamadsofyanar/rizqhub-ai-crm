@@ -1,0 +1,24 @@
+{% extends 'crm/base.html' %}{% block topbar %}StarSender Center{% endblock %}{% block content %}
+<div class="page-head"><div><h2>StarSender Multi-Device</h2><p>Account API Key membaca device; Device Key mengirim pesan dan membaca grup.</p></div>{% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<a class="btn btn-primary" href="{% url 'starsender_account_create' %}">Tambah akun</a>{% endif %}</div>
+<div class="grid grid-3">
+  <div class="card card-pad"><h3 class="mt-0">Device</h3><div class="metric">{{ devices|length }}</div><p class="muted">{{ connected_count }} connected</p></div>
+  <div class="card card-pad"><h3 class="mt-0">Grup</h3><div class="metric">{{ group_count }}</div><p class="muted">Tersinkron di seluruh device</p></div>
+  <div class="card card-pad"><h3 class="mt-0">Belum dipetakan</h3><div class="metric">{{ unmapped_count }}</div><p class="muted">Perlu Brand dan Agent</p></div>
+</div>
+{% for account in accounts %}
+<div class="card card-pad mt-2">
+  <div class="page-head"><div><h3 class="mt-0">{{ account.name }}</h3><p>Account key: tersimpan terenkripsi · Status: {{ account.last_sync_status|default:'Belum diuji' }}</p></div>{% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<div><a class="btn" href="{% url 'starsender_account_edit' account.pk %}">Edit</a></div>{% endif %}</div>
+  {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<div class="config-example">Webhook Premium multi-device:
+{{ app_base_url }}/webhooks/starsender/account/{{ account.webhook_token }}/</div>{% endif %}
+  {% if account.last_error %}<div class="alert alert-error mt-2">{{ account.last_error }}</div>{% endif %}
+  {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<div class="actions mt-2">
+    <form method="post" action="{% url 'starsender_account_test' account.pk %}">{% csrf_token %}<button class="btn" type="submit">Uji koneksi</button></form>
+    <form method="post" action="{% url 'starsender_account_sync' account.pk %}">{% csrf_token %}<button class="btn btn-primary" type="submit">Sinkronkan device</button></form>
+  </div>{% endif %}
+</div>
+{% empty %}<div class="card card-pad mt-2"><p>Belum ada akun StarSender. Tambahkan Account API Key terlebih dahulu.</p></div>{% endfor %}
+<div class="card mt-2"><table><thead><tr><th>Device</th><th>Status</th><th>Brand / Agent</th><th>Pengiriman</th><th>Grup</th><th>Aksi</th></tr></thead><tbody>
+{% for device in devices %}<tr><td><strong>{{ device.name|default:device.external_device_id }}</strong><br><span class="muted">{{ device.phone_number|default:'Nomor belum terbaca' }} · ID {{ device.external_device_id }}</span></td><td><span class="badge">{{ device.get_connection_status_display }}</span>{% if device.last_error %}<br><span class="text-danger">{{ device.last_error|truncatechars:80 }}</span>{% endif %}</td><td>{{ device.brand.name|default:'Belum dipetakan' }}<br><span class="muted">{{ device.agent.name|default:'Agent belum dipilih' }}</span></td><td>{% if device.send_enabled %}<span class="badge badge-green">Aktif</span>{% else %}<span class="badge badge-red">Nonaktif</span>{% endif %}</td><td>{{ device.whatsapp_groups.count }}</td><td>{% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<a class="btn" href="{% url 'starsender_device_edit' device.pk %}">Konfigurasi</a> {% endif %}<a class="btn" href="{% url 'starsender_device_groups' device.pk %}">Grup</a>{% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<form style="display:inline" method="post" action="{% url 'starsender_device_test' device.pk %}">{% csrf_token %}<button class="btn" type="submit">Uji key</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="6">Belum ada device. Jalankan sinkronisasi akun.</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="actions mt-2"><a class="btn" href="{% url 'group_preset_list' %}">Kategori & preset grup</a><a class="btn btn-primary" href="{% url 'broadcast_list' %}">Broadcast Center</a></div>
+{% endblock %}

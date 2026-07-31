@@ -1,0 +1,8 @@
+{% extends 'crm/base.html' %}{% block topbar %}Grup WhatsApp{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Grup — {{ device }}</h2><p>Kelola kategori, penguncian broadcast, dan mode AI per grup.</p></div><div><form method="post" action="{% url 'starsender_device_groups_sync' device.pk %}">{% csrf_token %}<button class="btn btn-primary" type="submit">Sinkronkan grup</button></form></div></div>
+<div class="alert alert-success">Rekomendasi: grup internal dikunci. Mode AI awal: Nonaktif atau hanya saat disebut.</div>
+<div class="card"><table><thead><tr><th>Nama grup</th><th>ID/JID</th><th>Kategori</th><th>AI</th><th>Keamanan</th><th>Aksi</th></tr></thead><tbody>
+{% for group in groups %}<tr><td><strong>{{ group.name }}</strong></td><td><span class="muted">{{ group.external_group_id }}</span></td><td>{% for link in group.category_links.all %}<span class="badge">{{ link.category.name }}</span>{% empty %}<span class="muted">Belum ada</span>{% endfor %}</td><td>{{ group.get_ai_mode_display }}</td><td>{% if group.is_locked %}<span class="badge badge-red">Dikunci</span>{% else %}<span class="badge badge-green">Dapat dipilih</span>{% endif %}</td><td><a class="btn" href="{% url 'whatsapp_group_edit' group.pk %}">Edit</a></td></tr>{% empty %}<tr><td colspan="6">Belum ada grup. Pastikan Device Key valid lalu sinkronkan.</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="actions mt-2"><a class="btn" href="{% url 'starsender_center' %}">Kembali</a><a class="btn" href="{% url 'group_preset_list' %}">Kelola preset</a></div>
+{% endblock %}

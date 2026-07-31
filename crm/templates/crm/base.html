@@ -22,11 +22,14 @@
       <a href="{% url 'knowledge_list' %}">▤ Knowledge Base</a>
       {% if feature_ai_evaluation %}<a href="{% url 'ai_evaluation' %}">✓ Evaluasi AI</a>{% endif %}
       {% if feature_automation %}<a href="{% url 'automation_list' %}">⚡ Automation & n8n</a>{% endif %}
-      {% if feature_campaign %}<a href="{% url 'campaign_list' %}">◉ Campaign</a>{% endif %}
-      <a href="{% url 'integration_list' %}">⌁ Integrasi</a>
+      {% if feature_campaign %}<a href="{% url 'campaign_list' %}">◉ Campaign Legacy</a>{% endif %}
+      <a href="{% url 'broadcast_list' %}">◉ Broadcast Center</a>
+      <a href="{% url 'starsender_center' %}">⌁ StarSender Center</a>
+      <a href="{% url 'integration_list' %}">⌁ Integrasi Legacy</a>
       <div class="nav-title">Platform</div>
       {% if feature_saas %}<a href="{% url 'workspace' %}">♙ Workspace & User</a>{% endif %}
-      <a href="{% url 'system_health' %}">♡ System Health</a>
+      <a href="{% url 'system_health' %}">♡ System Health {% if notification_count %}<span class="badge badge-red">{{ notification_count }}</span>{% endif %}</a>
+      {% if current_membership.role == 'owner' or current_membership.role == 'admin' %}<a href="{% url 'feature_settings' %}">⚙ Feature Settings</a>{% endif %}
       <a href="/admin/">⚙ Admin Sistem</a>
     </div>
     <div class="sidebar-bottom">

@@ -1,0 +1,7 @@
+{% extends 'crm/base.html' %}{% block topbar %}Kategori & Preset Grup{% endblock %}{% block content %}
+<div class="page-head"><div><h2>Preset Grup</h2><p>Simpan pilihan grup statis atau aturan kategori dinamis.</p></div><div><a class="btn" href="{% url 'group_category_create' %}">Tambah kategori</a> <a class="btn btn-primary" href="{% url 'group_preset_create' %}">Buat preset</a></div></div>
+<div class="grid grid-2">
+<div class="card card-pad"><h3 class="mt-0">Kategori</h3>{% for category in categories %}<div class="list-row"><div><strong>{{ category.name }}</strong><br><span class="muted">{{ category.group_links.count }} grup · {% if category.is_active %}Aktif{% else %}Nonaktif{% endif %}</span></div><a class="btn" href="{% url 'group_category_edit' category.pk %}">Edit</a></div>{% empty %}<p>Belum ada kategori.</p>{% endfor %}</div>
+<div class="card card-pad"><h3 class="mt-0">Preset tersimpan</h3>{% for preset in presets %}<div class="list-row"><div><strong>{{ preset.name }}</strong><br><span class="muted">{{ preset.get_preset_type_display }}{% if preset.category %} · {{ preset.category.name }}{% endif %}</span></div><a class="btn" href="{% url 'group_preset_edit' preset.pk %}">Edit</a></div>{% empty %}<p>Belum ada preset.</p>{% endfor %}</div>
+</div>
+{% endblock %}

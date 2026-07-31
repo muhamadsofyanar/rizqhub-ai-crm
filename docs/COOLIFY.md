@@ -1,152 +1,115 @@
-# Instalasi di Coolify
+# Deployment Coolify — V4 Consolidated
 
-## 1. Buat repository GitHub
+## Resource
 
-Buat repository privat, misalnya `rizqhub-ai-crm`, lalu upload seluruh isi paket ke root repository.
+Gunakan resource Docker Compose yang sudah ada:
 
-```bash
-git init
-git add .
-git commit -m "Initial RizqHub AI CRM"
-git branch -M main
-git remote add origin <repository-anda>
-git push -u origin main
+```text
+Repository: muhamadsofyanar/rizqhub-ai-crm
+Branch: main
+Base Directory: /
+Docker Compose Location: /docker-compose.yml
+Domain service: web:8000
 ```
 
-## 2. Tambahkan resource
+Jangan membuat domain publik untuk PostgreSQL, Redis, worker, atau beat.
 
-Di Coolify:
-
-1. Buka project tujuan.
-2. Klik **Add Resource**.
-3. Pilih repository privat melalui GitHub App atau Deploy Key.
-4. Pilih repository dan branch `main`.
-5. Ubah build pack menjadi **Docker Compose**.
-6. Base Directory: `/`.
-7. Docker Compose Location: `/docker-compose.yml`.
-
-## 3. Environment variables wajib
+## Environment wajib
 
 ```env
-DJANGO_SECRET_KEY=<random panjang>
-POSTGRES_PASSWORD=<password database kuat>
-APP_ENCRYPTION_KEY=<fernet key>
+DJANGO_DEBUG=false
+DJANGO_SECRET_KEY=<secret lama yang kuat>
+POSTGRES_PASSWORD=<password database lama>
+APP_ENCRYPTION_KEY=<fernet key lama>
 ADMIN_EMAIL=admin@domainanda.com
-ADMIN_PASSWORD=<password admin kuat>
+ADMIN_PASSWORD=<password admin>
 APP_BASE_URL=https://crm.domainanda.com
 ALLOWED_HOSTS=crm.domainanda.com
 CSRF_TRUSTED_ORIGINS=https://crm.domainanda.com
-DJANGO_DEBUG=false
 ```
 
-Opsional AI — Gemini:
+AI Gemini:
 
 ```env
 AI_PROVIDER=gemini
-GEMINI_API_KEY=isi-api-key-google-ai-studio
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=<key Google AI Studio>
+GEMINI_MODEL=gemini-3.6-flash
 AUTO_REPLY_DEFAULT=false
 ```
 
-Alternatif OpenAI:
-
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5-mini
-AUTO_REPLY_DEFAULT=false
-```
-
-Gunakan `AI_PROVIDER=auto` untuk memilih Gemini otomatis bila key Gemini tersedia.
-
-Tuning VPS 4 core/8 GB:
+Tuning VPS 4 vCPU/8 GB:
 
 ```env
 WEB_CONCURRENCY=3
 CELERY_CONCURRENCY=2
+LIVE_INBOX_POLL_SECONDS=2.5
+CAMPAIGN_MAX_RECIPIENTS=500
+WEBHOOK_RATE_LIMIT_PER_MINUTE=180
+BACKUP_RETENTION_DAYS=14
+BACKUP_HOUR=2
+FEATURE_AUTOMATION=false
+FEATURE_CAMPAIGN=false
+FEATURE_SAAS=false
+FEATURE_BACKUP=true
 ```
 
-## 4. Domain
+Account API Key dan Device Key StarSender tidak dimasukkan ke environment; keduanya dikelola melalui dashboard terenkripsi.
 
-Hubungkan domain ke service `web` dengan container port `8000`.
+## Proses startup
 
-Contoh:
+Service web menjalankan:
+
+1. `wait_for_db`
+2. migration Django bawaan
+3. `migrate --run-syncdb` untuk tabel additive CRM
+4. `collectstatic`
+5. `bootstrap`
+6. `v4_preflight`
+7. Gunicorn
+
+Worker dan Beat menunggu service web sehat agar tidak menjalankan job sebelum schema siap.
+
+## Verifikasi
 
 ```text
-https://crm.domainanda.com
+/health/
+/login/
+/system-health/
+/settings/features/
+/starsender/
 ```
 
-Jangan membuat domain publik untuk service `postgres`, `redis`, atau `worker`.
+Log sukses harus menunjukkan PostgreSQL/Redis healthy dan web/worker/beat started.
 
-## 5. Deploy
+## Setelah deployment
 
-Klik **Deploy**. Service `web` akan:
+1. Uji inbox personal lama.
+2. Tambah Account API Key di StarSender Center.
+3. Sinkronkan device.
+4. Isi Device Key dan mapping Brand/Agent per device.
+5. Pasang Webhook Premium akun.
+6. Uji satu device, lalu device berikutnya.
+7. Sinkronkan grup dan kunci grup internal.
+8. Aktivasi broadcast hanya melalui Feature Settings setelah tes.
 
-1. Menunggu PostgreSQL.
-2. Menjalankan migration bawaan Django dan membuat tabel CRM.
-3. Mengumpulkan static files.
-4. Membuat admin, workspace, brand, agent, pipeline, dan knowledge starter.
-5. Menjalankan Gunicorn.
+## Troubleshooting Git source
 
-Service `worker` menjalankan Celery untuk pemrosesan webhook dan pengiriman pesan.
+Bila Coolify menampilkan `Failed to read Git source`:
 
-## 6. Verifikasi
-
-- Health: `/health/`
-- Login: `/login/`
-- Admin: `/admin/`
-- Dashboard: `/`
-
-## 7. Auto deploy GitHub
-
-Aktifkan auto-deploy pada integrasi GitHub Coolify apabila setiap push ke `main` ingin langsung memicu deployment.
-
-## 8. Backup
-
-Minimal backup volume `postgres_data`. Untuk produksi berbayar, gunakan backup terjadwal ke object storage di luar VPS dan uji proses restore.
-
-## Troubleshooting
-
-### CSRF verification failed
-
-Pastikan:
-
-```env
-APP_BASE_URL=https://crm.domainanda.com
-ALLOWED_HOSTS=crm.domainanda.com
-CSRF_TRUSTED_ORIGINS=https://crm.domainanda.com
+```bash
+getent hosts github.com
+docker run --rm ghcr.io/coollabsio/coolify-helper:1.0.14 \
+  sh -lc 'git ls-remote https://github.com/muhamadsofyanar/rizqhub-ai-crm.git main'
 ```
 
-Lalu redeploy.
+Bila kedua tes berhasil tetapi Coolify masih memakai kondisi lama:
 
-### Login admin gagal
-
-Bootstrap hanya mengatur password saat admin pertama kali dibuat. Untuk memaksa reset satu kali:
-
-```env
-RESET_ADMIN_PASSWORD=true
+```bash
+docker restart coolify
 ```
 
-Redeploy, login, lalu hapus variable tersebut.
+Restart hanya container `coolify`, bukan seluruh container aplikasi.
 
-### Pesan masuk tidak muncul
+## Rollback
 
-- Pastikan koneksi StarSender aktif.
-- Pastikan webhook URL disalin lengkap termasuk token dan `/` terakhir.
-- Periksa log service `web` dan `worker`.
-- Periksa tabel Webhook Events melalui Django Admin.
-- Pastikan Redis dan worker sehat.
-
-### AI tidak menjawab
-
-- Pastikan `GEMINI_API_KEY` atau `OPENAI_API_KEY` benar dan `AI_PROVIDER` sesuai.
-- Buka agent playground untuk melihat error.
-- Pastikan knowledge entry aktif.
-- Pastikan percakapan sudah menekan **Aktifkan AI**.
-- Pastikan agent bukan mode Human Only.
-
-### Pesan outbound gagal
-
-- Pastikan API key berasal dari device yang benar.
-- Pastikan device StarSender connected.
-- Periksa status dan raw payload Message melalui Django Admin.
+Redeploy commit sebelumnya tanpa menghapus volume. Tabel V4 bersifat additive dan dapat dibiarkan ketika kode V3 dijalankan kembali.

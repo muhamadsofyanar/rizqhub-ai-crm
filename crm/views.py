@@ -12,7 +12,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.views import LoginView, LogoutView
 from django.core.cache import cache
 from django.db import connection as db_connection
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, OuterRef, Q, Subquery, Sum
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -23,28 +23,42 @@ from django.views.decorators.http import require_GET, require_POST
 from .forms import (
     AIReviewForm,
     AgentForm,
+    AgentRuntimePolicyForm,
     AgentTestForm,
     AutomationRuleForm,
+    BroadcastForm,
     CampaignForm,
+    GroupCategoryForm,
+    GroupPresetForm,
     ConnectionForm,
     ContactForm,
     ConversationAssignmentForm,
     DealStageForm,
     InternalNoteForm,
+    StarSenderAccountForm,
+    StarSenderDeviceForm,
     KnowledgeEntryForm,
     MemberInviteForm,
     ReplyForm,
+    WhatsAppGroupForm,
 )
 from .models import (
     AIReview,
     Agent,
+    AgentRuntimePolicy,
+    AppNotification,
     AuditLog,
     AutomationRule,
     AutomationRun,
+    Broadcast,
+    BroadcastRecipient,
     BackupRecord,
     Campaign,
     ChannelConnection,
     Contact,
+    FeatureFlag,
+    GroupCategory,
+    GroupPreset,
     Conversation,
     Deal,
     KnowledgeEntry,
@@ -52,17 +66,36 @@ from .models import (
     Membership,
     Message,
     Pipeline,
+    StarSenderAccount,
+    StarSenderDevice,
+    StarSenderInboundEvent,
     Subscription,
     Task,
     Tenant,
     UsageRecord,
+    WhatsAppGroup,
     WebhookEvent,
 )
 from .services.ai import generate_reply
+from .services.features import DEFAULT_FEATURES, ensure_default_flags, feature_enabled
+from .services.handoff import get_control, set_state
+from .services.inbound import parse_starsender
 from .services.audit import log_audit
 from .services.automations import trigger_automations
+from .services.starsender import (
+    sync_devices,
+    sync_groups,
+    test_account,
+    test_device,
+)
 from .services.webhook_security import validate_webhook_request
-from .tasks import launch_campaign, process_starsender_event, send_whatsapp_message
+from .tasks import (
+    launch_broadcast,
+    launch_campaign,
+    process_starsender_account_event,
+    process_starsender_event,
+    send_whatsapp_message,
+)
 
 
 class AppLoginView(LoginView):
@@ -157,7 +190,9 @@ def dashboard(request):
         "open_deals": deals.filter(status="open").count(),
         "pipeline_value": deals.filter(status="open").aggregate(total=Sum("value"))["total"]
         or Decimal("0"),
-        "failed_messages": Message.objects.filter(tenant=tenant, status="failed").count(),
+        "failed_messages": Message.objects.filter(
+            tenant=tenant, status__in=["failed", "uncertain"]
+        ).count(),
         "active_automations": AutomationRule.objects.filter(tenant=tenant, is_active=True).count(),
         "recent_conversations": conversations.select_related("contact", "brand", "agent")[:8],
         "recent_tasks": Task.objects.filter(tenant=tenant)
@@ -263,16 +298,36 @@ def agent_create(request):
 @roles_required("owner", "admin", "manager")
 def agent_edit(request, pk):
     agent = get_object_or_404(Agent, pk=pk, tenant=request.tenant)
+    policy, _ = AgentRuntimePolicy.objects.get_or_create(
+        tenant=request.tenant,
+        agent=agent,
+    )
     form = AgentForm(request.POST or None, instance=agent, tenant=request.tenant)
+    policy_form = AgentRuntimePolicyForm(
+        request.POST or None,
+        instance=policy,
+        prefix="policy",
+    )
     test_form = AgentTestForm()
     test_result = None
     test_meta = None
-    if request.method == "POST" and request.POST.get("action") == "save" and form.is_valid():
+    action = request.POST.get("action") if request.method == "POST" else ""
+    if request.method == "POST" and action == "save" and form.is_valid():
         form.save()
         log_audit(tenant=request.tenant, action="agent.update", request=request, obj=agent)
         messages.success(request, "Agent diperbarui.")
         return redirect("agent_edit", pk=agent.pk)
-    if request.method == "POST" and request.POST.get("action") == "test":
+    if request.method == "POST" and action == "save_policy" and policy_form.is_valid():
+        policy_form.save()
+        log_audit(
+            tenant=request.tenant,
+            action="agent.policy.update",
+            request=request,
+            obj=policy,
+        )
+        messages.success(request, "Smart Handoff dan kontrol respons diperbarui.")
+        return redirect("agent_edit", pk=agent.pk)
+    if request.method == "POST" and action == "test":
         test_form = AgentTestForm(request.POST)
         if test_form.is_valid():
             contact, _ = Contact.objects.get_or_create(
@@ -300,6 +355,7 @@ def agent_edit(request, pk):
         {
             "agent": agent,
             "form": form,
+            "policy_form": policy_form,
             "test_form": test_form,
             "test_result": test_result,
             "test_meta": test_meta,
@@ -371,17 +427,80 @@ def knowledge_toggle(request, pk):
     return redirect("knowledge_list")
 
 
-@tenant_required
-def inbox(request):
-    qs = Conversation.objects.filter(tenant=request.tenant).select_related(
-        "contact", "brand", "agent", "assigned_to"
+def _inbox_queryset(request):
+    latest_message = Message.objects.filter(conversation=OuterRef("pk")).order_by(
+        "-created_at"
+    )
+    qs = (
+        Conversation.objects.filter(tenant=request.tenant)
+        .select_related("contact", "brand", "agent", "assigned_to")
+        .annotate(
+            latest_message_body=Subquery(latest_message.values("body")[:1]),
+            latest_sender_type=Subquery(latest_message.values("sender_type")[:1]),
+        )
     )
     status = request.GET.get("status", "")
     if status in ["open", "pending", "closed"]:
         qs = qs.filter(status=status)
     if request.GET.get("handoff") == "1":
         qs = qs.filter(needs_handoff=True)
-    return render(request, "crm/inbox.html", {"conversations": qs[:200], "selected": None})
+    return qs
+
+
+@tenant_required
+def inbox(request):
+    return render(
+        request,
+        "crm/inbox.html",
+        {
+            "conversations": _inbox_queryset(request)[:200],
+            "selected": None,
+            "live_poll_ms": int(settings.LIVE_INBOX_POLL_SECONDS * 1000),
+        },
+    )
+
+
+@tenant_required
+@require_GET
+def inbox_conversations_api(request):
+    rows = list(_inbox_queryset(request)[:200])
+    payload = []
+    for conversation in rows:
+        display_name = str(conversation.contact)
+        payload.append(
+            {
+                "id": str(conversation.id),
+                "url": reverse("conversation_detail", args=[conversation.id]),
+                "contact_name": display_name,
+                "brand_name": conversation.brand.name,
+                "agent_name": conversation.agent.name if conversation.agent else "Tanpa agent",
+                "last_message_at": timezone.localtime(conversation.last_message_at).isoformat(),
+                "last_message_label": timezone.localtime(conversation.last_message_at).strftime(
+                    "%d %b %H:%M"
+                ),
+                "last_message_preview": (conversation.latest_message_body or "")[:120],
+                "last_sender_type": conversation.latest_sender_type or "",
+                "status": conversation.status,
+                "channel": conversation.channel,
+                "ai_enabled": conversation.ai_enabled,
+                "needs_handoff": conversation.needs_handoff,
+                "handoff_reason": conversation.handoff_reason,
+                "unread_count": conversation.unread_count,
+                "assigned_to": (
+                    conversation.assigned_to.get_full_name()
+                    or conversation.assigned_to.username
+                    if conversation.assigned_to
+                    else ""
+                ),
+            }
+        )
+    return JsonResponse(
+        {
+            "ok": True,
+            "conversations": payload,
+            "generated_at": timezone.now().isoformat(),
+        }
+    )
 
 
 @tenant_required
@@ -425,6 +544,7 @@ def conversation_detail(request, pk):
                         "updated_at",
                     ]
                 )
+                set_state(conversation, "human_active")
                 send_whatsapp_message.delay(str(msg.id))
                 log_audit(
                     tenant=request.tenant,
@@ -453,6 +573,8 @@ def conversation_detail(request, pk):
             "conversations": Conversation.objects.filter(tenant=request.tenant)
             .select_related("contact", "brand", "agent")[:100],
             "selected": conversation,
+            "conversation_control": get_control(conversation),
+            "contact_memory": getattr(conversation.contact, "memory", None),
             "live_poll_ms": int(settings.LIVE_INBOX_POLL_SECONDS * 1000),
         },
     )
@@ -510,7 +632,7 @@ def conversation_messages_api(request, pk):
     )
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def conversation_action(request, pk, action):
     conv = get_object_or_404(Conversation, pk=pk, tenant=request.tenant)
@@ -536,6 +658,12 @@ def conversation_action(request, pk, action):
     else:
         raise Http404
     conv.save()
+    if action == "enable-ai":
+        set_state(conv, "ai_active")
+    elif action in {"takeover", "pending"}:
+        set_state(conv, "human_active" if action == "takeover" else "waiting_human")
+    elif action == "close":
+        set_state(conv, "resolved")
     log_audit(
         tenant=request.tenant,
         action=f"conversation.{action}",
@@ -545,7 +673,7 @@ def conversation_action(request, pk, action):
     return redirect("conversation_detail", pk=conv.pk)
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def conversation_note(request, pk):
     conv = get_object_or_404(Conversation, pk=pk, tenant=request.tenant)
@@ -564,7 +692,7 @@ def conversation_note(request, pk):
     return redirect("conversation_detail", pk=conv.pk)
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def conversation_assign(request, pk):
     conv = get_object_or_404(Conversation, pk=pk, tenant=request.tenant)
@@ -583,50 +711,67 @@ def conversation_assign(request, pk):
     return redirect("conversation_detail", pk=conv.pk)
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def message_retry(request, pk):
-    msg = get_object_or_404(Message, pk=pk, tenant=request.tenant, direction="outbound")
-    if msg.status == "failed":
-        metadata = {**(msg.ai_metadata or {}), "manual_retry_by": request.user.id}
-        msg.status = "queued"
-        msg.ai_metadata = metadata
-        msg.save(update_fields=["status", "ai_metadata", "updated_at"])
+    with transaction.atomic():
+        msg = get_object_or_404(
+            Message.objects.select_for_update(),
+            pk=pk,
+            tenant=request.tenant,
+            direction="outbound",
+        )
+        should_queue = msg.status == "failed"
+        if should_queue:
+            metadata = {
+                **(msg.ai_metadata or {}),
+                "manual_retry_by": request.user.id,
+                "manual_retry_at": timezone.now().isoformat(),
+            }
+            msg.status = "queued"
+            msg.ai_metadata = metadata
+            msg.save(update_fields=["status", "ai_metadata", "updated_at"])
+    if should_queue:
         send_whatsapp_message.delay(str(msg.id))
         log_audit(tenant=request.tenant, action="message.retry", request=request, obj=msg)
     return redirect("conversation_detail", pk=msg.conversation_id)
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def message_approve(request, pk):
-    draft = get_object_or_404(
-        Message,
-        pk=pk,
-        tenant=request.tenant,
-        direction="internal",
-        sender_type="ai",
-    )
-    if (draft.ai_metadata or {}).get("approved_message_id"):
-        return redirect("conversation_detail", pk=draft.conversation_id)
-    outbound = Message.objects.create(
-        tenant=request.tenant,
-        conversation=draft.conversation,
-        direction="outbound",
-        sender_type="ai-approved",
-        sender_user=request.user,
-        body=draft.body,
-        status="queued",
-        ai_metadata={**(draft.ai_metadata or {}), "approved_by": request.user.id},
-    )
-    draft.ai_metadata = {**(draft.ai_metadata or {}), "approved_message_id": str(outbound.id)}
-    draft.save(update_fields=["ai_metadata", "updated_at"])
+    with transaction.atomic():
+        draft = get_object_or_404(
+            Message.objects.select_for_update().select_related("conversation"),
+            pk=pk,
+            tenant=request.tenant,
+            direction="internal",
+            sender_type="ai",
+        )
+        approved_id = (draft.ai_metadata or {}).get("approved_message_id")
+        if approved_id:
+            return redirect("conversation_detail", pk=draft.conversation_id)
+        outbound = Message.objects.create(
+            tenant=request.tenant,
+            conversation=draft.conversation,
+            direction="outbound",
+            sender_type="ai-approved",
+            sender_user=request.user,
+            body=draft.body,
+            status="queued",
+            ai_metadata={**(draft.ai_metadata or {}), "approved_by": request.user.id},
+        )
+        draft.ai_metadata = {
+            **(draft.ai_metadata or {}),
+            "approved_message_id": str(outbound.id),
+        }
+        draft.save(update_fields=["ai_metadata", "updated_at"])
     send_whatsapp_message.delay(str(outbound.id))
     log_audit(tenant=request.tenant, action="message.approve_ai", request=request, obj=outbound)
     return redirect("conversation_detail", pk=draft.conversation_id)
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def message_review(request, pk):
     msg = get_object_or_404(Message, pk=pk, tenant=request.tenant, sender_type__startswith="ai")
@@ -654,7 +799,7 @@ def pipeline_board(request):
     return render(request, "crm/pipeline.html", {"pipelines": pipelines})
 
 
-@tenant_required
+@roles_required("owner", "admin", "manager", "sales", "cs")
 @require_POST
 def deal_move(request, pk):
     deal = get_object_or_404(Deal, pk=pk, tenant=request.tenant)
@@ -887,9 +1032,19 @@ def system_health(request):
         pass
     context = {
         "checks": checks,
-        "failed_messages": Message.objects.filter(tenant=request.tenant, status="failed")[:50],
+        "failed_messages": Message.objects.filter(
+            tenant=request.tenant, status__in=["failed", "uncertain"]
+        )[:50],
         "failed_webhooks": WebhookEvent.objects.filter(tenant=request.tenant, status="failed")[:50],
+        "failed_account_webhooks": StarSenderInboundEvent.objects.filter(
+            tenant=request.tenant, status__in=["failed", "needs_mapping"]
+        )[:50],
         "failed_automations": AutomationRun.objects.filter(tenant=request.tenant, status="failed")[:50],
+        "failed_broadcasts": Broadcast.objects.filter(tenant=request.tenant, status="failed")[:30],
+        "problem_broadcast_recipients": BroadcastRecipient.objects.filter(
+            tenant=request.tenant, status__in=["failed", "uncertain"]
+        ).select_related("broadcast")[:50],
+        "notifications": AppNotification.objects.filter(tenant=request.tenant, is_read=False)[:50],
         "backups": BackupRecord.objects.filter(tenant=request.tenant)[:30],
         "audit_logs": AuditLog.objects.filter(tenant=request.tenant).select_related("user")[:50],
     }
@@ -1059,3 +1214,541 @@ def campaign_start(request, pk):
         )
     log_audit(tenant=request.tenant, action="campaign.start", request=request, obj=campaign)
     return redirect("campaign_detail", pk=campaign.pk)
+
+
+@roles_required("owner", "admin")
+def feature_settings(request):
+    flags = ensure_default_flags(request.tenant)
+    return render(
+        request,
+        "crm/feature_settings.html",
+        {"flags": flags, "defaults": DEFAULT_FEATURES},
+    )
+
+
+@roles_required("owner", "admin")
+@require_POST
+def feature_toggle(request, key):
+    ensure_default_flags(request.tenant)
+    flag = get_object_or_404(FeatureFlag, tenant=request.tenant, key=key)
+    new_value = request.POST.get("enabled") == "true"
+    if flag.is_dangerous and new_value and request.POST.get("confirm") != "AKTIFKAN":
+        messages.error(request, "Ketik AKTIFKAN untuk menyalakan fitur berisiko.")
+        return redirect("feature_settings")
+    flag.enabled = new_value
+    flag.updated_by = request.user
+    flag.save(update_fields=["enabled", "updated_by", "updated_at"])
+    log_audit(
+        tenant=request.tenant,
+        action="feature.toggle",
+        request=request,
+        obj=flag,
+        metadata={"enabled": new_value},
+    )
+    messages.success(request, f"{flag.label} {'diaktifkan' if new_value else 'dinonaktifkan'} tanpa redeploy.")
+    return redirect("feature_settings")
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def starsender_center(request):
+    accounts = StarSenderAccount.objects.filter(tenant=request.tenant).prefetch_related("devices")
+    devices = StarSenderDevice.objects.filter(tenant=request.tenant).select_related(
+        "account", "brand", "agent", "connection"
+    )
+    groups = WhatsAppGroup.objects.filter(tenant=request.tenant)
+    return render(
+        request,
+        "crm/starsender_center.html",
+        {
+            "accounts": accounts,
+            "devices": devices,
+            "group_count": groups.count(),
+            "connected_count": devices.filter(connection_status="connected").count(),
+            "unmapped_count": devices.filter(Q(brand__isnull=True) | Q(agent__isnull=True)).count(),
+            "app_base_url": settings.APP_BASE_URL,
+        },
+    )
+
+
+@roles_required("owner", "admin")
+def starsender_account_create(request):
+    form = StarSenderAccountForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        account = form.save(commit=False)
+        account.tenant = request.tenant
+        account.save()
+        log_audit(tenant=request.tenant, action="starsender.account.create", request=request, obj=account)
+        messages.success(request, "Akun StarSender disimpan. Lanjutkan dengan Uji Koneksi.")
+        return redirect("starsender_center")
+    return render(
+        request,
+        "crm/form.html",
+        {"form": form, "title": "Tambah akun StarSender", "subtitle": "Account API Key membaca seluruh device. Key tidak ditampilkan kembali."},
+    )
+
+
+@roles_required("owner", "admin")
+def starsender_account_edit(request, pk):
+    account = get_object_or_404(StarSenderAccount, pk=pk, tenant=request.tenant)
+    form = StarSenderAccountForm(request.POST or None, instance=account)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        log_audit(tenant=request.tenant, action="starsender.account.update", request=request, obj=account)
+        messages.success(request, "Akun StarSender diperbarui.")
+        return redirect("starsender_center")
+    return render(
+        request,
+        "crm/form.html",
+        {"form": form, "title": f"Edit akun — {account.name}", "subtitle": f"Webhook multi-device: {settings.APP_BASE_URL}/webhooks/starsender/account/{account.webhook_token}/"},
+    )
+
+
+@roles_required("owner", "admin")
+@require_POST
+def starsender_account_test(request, pk):
+    account = get_object_or_404(StarSenderAccount, pk=pk, tenant=request.tenant)
+    try:
+        result = test_account(account)
+        account.last_sync_status = "connection_ok"
+        account.last_error = ""
+        account.save(update_fields=["last_sync_status", "last_error", "updated_at"])
+        messages.success(request, f"Koneksi akun berhasil: {result.get('message', 'OK')}")
+    except Exception as exc:
+        account.last_sync_status = "failed"
+        account.last_error = str(exc)[:4000]
+        account.save(update_fields=["last_sync_status", "last_error", "updated_at"])
+        messages.error(request, f"Uji koneksi gagal: {exc}")
+    return redirect("starsender_center")
+
+
+@roles_required("owner", "admin")
+@require_POST
+def starsender_account_sync(request, pk):
+    account = get_object_or_404(StarSenderAccount, pk=pk, tenant=request.tenant)
+    try:
+        result = sync_devices(account)
+        messages.success(
+            request,
+            f"Sinkronisasi selesai: {result['created']} device baru, {result['updated']} diperbarui, total {result['total']}.",
+        )
+    except Exception as exc:
+        account.last_sync_status = "failed"
+        account.last_error = str(exc)[:4000]
+        account.save(update_fields=["last_sync_status", "last_error", "updated_at"])
+        messages.error(request, f"Sinkronisasi gagal: {exc}")
+    return redirect("starsender_center")
+
+
+@roles_required("owner", "admin")
+def starsender_device_edit(request, pk):
+    device = get_object_or_404(StarSenderDevice, pk=pk, tenant=request.tenant)
+    form = StarSenderDeviceForm(request.POST or None, instance=device, tenant=request.tenant)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        log_audit(tenant=request.tenant, action="starsender.device.update", request=request, obj=device)
+        messages.success(request, "Mapping device, Device Key, dan pengaturan pengiriman disimpan.")
+        return redirect("starsender_center")
+    return render(
+        request,
+        "crm/form.html",
+        {
+            "form": form,
+            "title": f"Konfigurasi device — {device}",
+            "subtitle": "Balasan inbox selalu dikirim melalui device asal. Jangan aktifkan pengiriman sebelum Brand, Agent, dan Device Key benar.",
+        },
+    )
+
+
+@roles_required("owner", "admin")
+@require_POST
+def starsender_device_test(request, pk):
+    device = get_object_or_404(StarSenderDevice, pk=pk, tenant=request.tenant)
+    try:
+        result = test_device(device)
+        device.last_error = ""
+        device.save(update_fields=["last_error", "updated_at"])
+        messages.success(request, f"Device Key valid: {result.get('message', 'OK')}")
+    except Exception as exc:
+        device.last_error = str(exc)[:4000]
+        device.save(update_fields=["last_error", "updated_at"])
+        messages.error(request, f"Uji Device Key gagal: {exc}")
+    return redirect("starsender_center")
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def starsender_device_groups(request, pk):
+    device = get_object_or_404(StarSenderDevice, pk=pk, tenant=request.tenant)
+    groups = device.whatsapp_groups.prefetch_related("category_links__category")
+    return render(
+        request,
+        "crm/whatsapp_groups.html",
+        {"device": device, "groups": groups},
+    )
+
+
+@roles_required("owner", "admin")
+@require_POST
+def starsender_device_groups_sync(request, pk):
+    device = get_object_or_404(StarSenderDevice, pk=pk, tenant=request.tenant)
+    try:
+        result = sync_groups(device)
+        messages.success(
+            request,
+            f"Grup disinkronkan: {result['created']} baru, {result['updated']} diperbarui, total {result['total']}.",
+        )
+    except Exception as exc:
+        messages.error(request, f"Sinkronisasi grup gagal: {exc}")
+    return redirect("starsender_device_groups", pk=device.pk)
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def whatsapp_group_edit(request, pk):
+    group = get_object_or_404(WhatsAppGroup, pk=pk, tenant=request.tenant)
+    form = WhatsAppGroupForm(request.POST or None, instance=group, tenant=request.tenant)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        ai_enabled = group.ai_mode in {"mention", "draft", "autonomous"}
+        group_conversations = Conversation.objects.filter(
+            tenant=request.tenant,
+            channel="whatsapp_group",
+            external_thread_id=group.external_group_id,
+            status__in=["open", "pending"],
+        )
+        if ai_enabled:
+            group_conversations.update(
+                ai_enabled=True, needs_handoff=False, handoff_reason="", status="open"
+            )
+        else:
+            group_conversations.update(ai_enabled=False)
+        log_audit(tenant=request.tenant, action="starsender.group.update", request=request, obj=group)
+        messages.success(request, "Kategori, keamanan, dan mode AI grup diperbarui.")
+        return redirect("starsender_device_groups", pk=group.device_id)
+    return render(
+        request,
+        "crm/form.html",
+        {"form": form, "title": f"Edit grup — {group.name}", "subtitle": "Kunci grup internal agar tidak pernah menjadi target broadcast."},
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def group_category_create(request):
+    form = GroupCategoryForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        category = form.save(commit=False)
+        category.tenant = request.tenant
+        category.save()
+        log_audit(
+            tenant=request.tenant,
+            action="starsender.group_category.create",
+            request=request,
+            obj=category,
+        )
+        messages.success(request, "Kategori grup dibuat.")
+        return redirect("group_preset_list")
+    return render(request, "crm/form.html", {"form": form, "title": "Tambah kategori grup", "subtitle": "Kategori dapat dipakai oleh banyak grup dan preset dinamis."})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def group_category_edit(request, pk):
+    category = get_object_or_404(GroupCategory, pk=pk, tenant=request.tenant)
+    form = GroupCategoryForm(request.POST or None, instance=category)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        log_audit(
+            tenant=request.tenant,
+            action="starsender.group_category.update",
+            request=request,
+            obj=category,
+        )
+        messages.success(request, "Kategori grup diperbarui.")
+        return redirect("group_preset_list")
+    return render(
+        request,
+        "crm/form.html",
+        {
+            "form": form,
+            "title": f"Edit kategori — {category.name}",
+            "subtitle": "Nonaktifkan kategori bila tidak lagi digunakan; data preset lama tetap tersimpan.",
+        },
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def group_preset_list(request):
+    presets = GroupPreset.objects.filter(tenant=request.tenant).select_related("brand", "category")
+    categories = GroupCategory.objects.filter(tenant=request.tenant)
+    return render(request, "crm/group_presets.html", {"presets": presets, "categories": categories})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def group_preset_create(request):
+    form = GroupPresetForm(request.POST or None, tenant=request.tenant)
+    if request.method == "POST" and form.is_valid():
+        preset = form.save(commit=False)
+        preset.tenant = request.tenant
+        preset.created_by = request.user
+        preset.save()
+        form.instance = preset
+        form.save()
+        log_audit(
+            tenant=request.tenant,
+            action="starsender.group_preset.create",
+            request=request,
+            obj=preset,
+        )
+        messages.success(request, "Preset grup dibuat.")
+        return redirect("group_preset_list")
+    return render(request, "crm/form.html", {"form": form, "title": "Buat preset grup", "subtitle": "Preset statis menyimpan grup tertentu; preset dinamis mengikuti kategori."})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def group_preset_edit(request, pk):
+    preset = get_object_or_404(GroupPreset, pk=pk, tenant=request.tenant)
+    form = GroupPresetForm(request.POST or None, instance=preset, tenant=request.tenant)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        log_audit(
+            tenant=request.tenant,
+            action="starsender.group_preset.update",
+            request=request,
+            obj=preset,
+        )
+        messages.success(request, "Preset grup diperbarui.")
+        return redirect("group_preset_list")
+    return render(request, "crm/form.html", {"form": form, "title": f"Edit preset — {preset.name}", "subtitle": "Seluruh tujuan akan ditampilkan kembali sebelum pengiriman."})
+
+
+def _preset_groups(preset, device):
+    if not preset:
+        return WhatsAppGroup.objects.none()
+    if preset.preset_type == "static":
+        return WhatsAppGroup.objects.filter(
+            id__in=preset.members.values_list("group_id", flat=True),
+            device=device,
+            is_active=True,
+            is_locked=False,
+        )
+    qs = WhatsAppGroup.objects.filter(
+        device=device,
+        is_active=True,
+        is_locked=False,
+        category_links__category=preset.category,
+    )
+    if preset.brand_id:
+        qs = qs.filter(device__brand=preset.brand)
+    return qs.distinct()
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_list(request):
+    broadcasts = Broadcast.objects.filter(tenant=request.tenant).select_related("device", "preset")
+    return render(request, "crm/broadcast_list.html", {"broadcasts": broadcasts})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_create(request):
+    form = BroadcastForm(request.POST or None, tenant=request.tenant)
+    if request.method == "POST" and form.is_valid():
+        broadcast = form.save(commit=False)
+        broadcast.tenant = request.tenant
+        broadcast.created_by = request.user
+        broadcast.status = "draft"
+        broadcast.metadata = {
+            "consent_confirmed": bool(form.cleaned_data.get("confirm_consent")),
+            "group_permission_confirmed": bool(form.cleaned_data.get("confirm_group_permission")),
+        }
+        broadcast.save()
+        recipient_count = 0
+        if broadcast.target_type == "personal":
+            selected_targets = set()
+            for contact in form.cleaned_data.get("contacts", []):
+                key = hashlib.sha256(f"{broadcast.id}:contact:{contact.id}".encode()).hexdigest()
+                normalized_phone = "".join(ch for ch in (contact.phone or "") if ch.isdigit())
+                if normalized_phone.startswith("0"):
+                    normalized_phone = "62" + normalized_phone[1:]
+                if not normalized_phone or normalized_phone in selected_targets:
+                    continue
+                selected_targets.add(normalized_phone)
+                BroadcastRecipient.objects.get_or_create(
+                    tenant=request.tenant,
+                    broadcast=broadcast,
+                    idempotency_key=key,
+                    defaults={
+                        "contact": contact,
+                        "external_target": normalized_phone,
+                        "display_name": contact.name or contact.phone,
+                        "status": "queued",
+                    },
+                )
+                recipient_count += 1
+            manual_numbers = {
+                "".join(ch for ch in line if ch.isdigit())
+                for line in (form.cleaned_data.get("manual_numbers") or "").splitlines()
+                if line.strip()
+            }
+            for number in sorted(n for n in manual_numbers if n):
+                if number.startswith("0"):
+                    number = "62" + number[1:]
+                if number in selected_targets:
+                    continue
+                selected_targets.add(number)
+                key = hashlib.sha256(f"{broadcast.id}:number:{number}".encode()).hexdigest()
+                _, created = BroadcastRecipient.objects.get_or_create(
+                    tenant=request.tenant,
+                    broadcast=broadcast,
+                    idempotency_key=key,
+                    defaults={
+                        "external_target": number,
+                        "display_name": number,
+                        "status": "queued",
+                    },
+                )
+                recipient_count += int(created)
+        else:
+            groups = list(form.cleaned_data.get("groups", []))
+            preset = form.cleaned_data.get("preset")
+            if preset:
+                groups.extend(list(_preset_groups(preset, broadcast.device)))
+            unique_groups = {str(group.id): group for group in groups}
+            for group in unique_groups.values():
+                if group.device_id != broadcast.device_id or group.is_locked or not group.is_active:
+                    continue
+                key = hashlib.sha256(f"{broadcast.id}:group:{group.id}".encode()).hexdigest()
+                BroadcastRecipient.objects.get_or_create(
+                    tenant=request.tenant,
+                    broadcast=broadcast,
+                    idempotency_key=key,
+                    defaults={
+                        "group": group,
+                        "external_target": group.external_group_id,
+                        "display_name": group.name,
+                        "status": "queued",
+                    },
+                )
+                recipient_count += 1
+        broadcast.total_count = broadcast.recipients.count()
+        broadcast.save(update_fields=["total_count", "updated_at"])
+        log_audit(
+            tenant=request.tenant,
+            action="broadcast.create",
+            request=request,
+            obj=broadcast,
+            metadata={"recipient_count": broadcast.total_count},
+        )
+        messages.success(request, "Broadcast disimpan sebagai draft. Tinjau semua penerima sebelum mengetik KIRIM.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    return render(request, "crm/broadcast_form.html", {"form": form})
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+def broadcast_detail(request, pk):
+    broadcast = get_object_or_404(
+        Broadcast.objects.select_related("device", "preset", "created_by"),
+        pk=pk,
+        tenant=request.tenant,
+    )
+    recipients = broadcast.recipients.select_related("contact", "group")[:1000]
+    feature_key = "group_broadcast" if broadcast.target_type == "group" else "personal_broadcast"
+    return render(
+        request,
+        "crm/broadcast_detail.html",
+        {
+            "broadcast": broadcast,
+            "recipients": recipients,
+            "feature_enabled": feature_enabled(request.tenant, feature_key, False),
+            "feature_key": feature_key,
+        },
+    )
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def broadcast_start(request, pk):
+    broadcast = get_object_or_404(Broadcast, pk=pk, tenant=request.tenant)
+    feature_key = "group_broadcast" if broadcast.target_type == "group" else "personal_broadcast"
+    if not feature_enabled(request.tenant, feature_key, False):
+        messages.error(request, "Fitur broadcast belum diaktifkan pada System Settings → Features.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if request.POST.get("confirm") != "KIRIM":
+        messages.error(request, "Ketik KIRIM persis untuk mengonfirmasi pengiriman.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if broadcast.status not in {"draft", "scheduled", "queued", "failed"}:
+        messages.error(request, "Broadcast tidak dapat dimulai dari status sekarang.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if broadcast.total_count == 0:
+        messages.error(request, "Broadcast tidak memiliki penerima.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    max_recipients = int(getattr(settings, "CAMPAIGN_MAX_RECIPIENTS", 500))
+    if broadcast.total_count > max_recipients:
+        messages.error(request, f"Batas aman rilis ini adalah {max_recipients} penerima per broadcast.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if not broadcast.device.send_enabled:
+        messages.error(request, "Device pengiriman sedang dinonaktifkan.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    metadata = broadcast.metadata or {}
+    if broadcast.target_type == "personal" and not metadata.get("consent_confirmed"):
+        messages.error(request, "Konfirmasi consent personal tidak tercatat.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if broadcast.target_type == "group" and not metadata.get("group_permission_confirmed"):
+        messages.error(request, "Konfirmasi izin pengiriman grup tidak tercatat.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    if broadcast.scheduled_at and broadcast.scheduled_at > timezone.now():
+        broadcast.status = "scheduled"
+        broadcast.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Broadcast dijadwalkan.")
+    else:
+        broadcast.status = "queued"
+        broadcast.save(update_fields=["status", "updated_at"])
+        launch_broadcast.delay(str(broadcast.id))
+        messages.success(request, "Broadcast masuk antrean. Pengiriman dilakukan bertahap sesuai delay.")
+    log_audit(tenant=request.tenant, action="broadcast.start", request=request, obj=broadcast)
+    return redirect("broadcast_detail", pk=broadcast.pk)
+
+
+@roles_required("owner", "admin", "manager", "marketing")
+@require_POST
+def broadcast_cancel(request, pk):
+    broadcast = get_object_or_404(Broadcast, pk=pk, tenant=request.tenant)
+    if broadcast.status in {"completed", "cancelled"}:
+        messages.info(request, "Broadcast sudah selesai atau sudah dibatalkan.")
+        return redirect("broadcast_detail", pk=broadcast.pk)
+    broadcast.status = "cancelled"
+    broadcast.completed_at = timezone.now()
+    broadcast.save(update_fields=["status", "completed_at", "updated_at"])
+    broadcast.recipients.filter(status="queued").update(status="cancelled", updated_at=timezone.now())
+    log_audit(tenant=request.tenant, action="broadcast.cancel", request=request, obj=broadcast)
+    messages.success(request, "Antrean yang belum dikirim telah dibatalkan.")
+    return redirect("broadcast_detail", pk=broadcast.pk)
+
+
+@csrf_exempt
+def starsender_account_webhook(request, token):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "method_not_allowed"}, status=405)
+    blocked = validate_webhook_request(request, token)
+    if blocked:
+        return blocked
+    account = get_object_or_404(StarSenderAccount, webhook_token=token, is_active=True)
+    if not feature_enabled(account.tenant, "starsender_multi_device", True):
+        return JsonResponse({"ok": True, "queued": False, "ignored": "feature_disabled"})
+    try:
+        payload = json.loads(request.body.decode() or "{}")
+    except ValueError:
+        return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+    digest = hashlib.sha256(request.body).hexdigest()
+    parsed = parse_starsender(payload)
+    parsed_device = parsed.get("device", "")
+    device = account.devices.filter(external_device_id=parsed_device).first() if parsed_device else None
+    event, created = StarSenderInboundEvent.objects.get_or_create(
+        tenant=account.tenant,
+        account=account,
+        payload_hash=digest,
+        defaults={
+            "device": device,
+            "external_event_id": parsed.get("message_id", ""),
+            "payload": payload,
+        },
+    )
+    if created:
+        process_starsender_account_event.delay(str(event.id))
+    return JsonResponse({"ok": True, "queued": created})

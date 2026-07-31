@@ -2,7 +2,8 @@ import os
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
-from crm.models import Agent, AutomationRule, Brand, KnowledgeEntry, Membership, Pipeline, PipelineStage, Subscription, Tenant
+from crm.models import Agent, AgentRuntimePolicy, AutomationRule, Brand, KnowledgeEntry, Membership, Pipeline, PipelineStage, Subscription, Tenant
+from crm.services.features import ensure_default_flags
 
 
 AGENT_DATA = [
@@ -67,6 +68,7 @@ class Command(BaseCommand):
 
         tenant, _ = Tenant.objects.get_or_create(slug="rizqhub", defaults={"name": "RizqHub"})
         Membership.objects.get_or_create(tenant=tenant, user=user, defaults={"role": "owner"})
+        ensure_default_flags(tenant)
         Subscription.objects.get_or_create(
             tenant=tenant,
             defaults={
@@ -94,6 +96,7 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+            AgentRuntimePolicy.objects.get_or_create(tenant=tenant, agent=agent)
             pipeline, _ = Pipeline.objects.get_or_create(tenant=tenant, brand=brand, name=f"Pipeline {brand.name}", defaults={"is_default": True})
             for position, stage_name in enumerate(item["stages"]):
                 PipelineStage.objects.get_or_create(
